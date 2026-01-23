@@ -1,0 +1,50 @@
+name: Docs
+
+on:
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    branches: [ '*' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Check out a copy of the repository
+        uses: actions/checkout@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Run sphinx
+        run: uv run --frozen make -C docs html
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-docs
+          path: ./docs/build/html
+
+  deploy:
+    needs: build
+    if: ${{ github.event_name =='workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-docs
+          path: ./docs/build/html
+      - name: Upload docs to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          publish_branch: gh-pages
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs/build/html
+          force_orphan: true # This allows you to make your publish branch with only the latest commit.
