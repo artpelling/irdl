@@ -50,7 +50,7 @@ typeCheckingMode = 'off'
 
 [tool.ruff]
 src = ["src"]
-exclude = ["packages/irdl/src/irdl/repositories.py"]
+exclude = ["src/irdl/repositories.py"]
 line-length = 120
 
 [tool.ruff.format]
@@ -68,6 +68,3 @@ max-doc-length = 100
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
-
-[tool.ruff.lint.per-file-ignores]
-"src/irdl/repositories.py" = ["D"]
