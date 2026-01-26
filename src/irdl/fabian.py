@@ -14,22 +14,22 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR):
 
     Parameters
     ----------
-    kind : str
-        Type of HRTF to download. Either 'measured' or 'modeled'.
-    hato : int
+    kind : :class:`str`
+        Type of HRTF to download. Either ``'measured'`` or ``'modeled'``.
+    hato : :class:`int`
         Head-above-torso-rotation of HRTFs in degrees.
         Either 0, 10, 20, 30, 40, 50, 310, 320, 330, 340 or 350.
-    path : str or `pathlib.Path`
+    path : :class:`str` or :class:`pathlib.Path`
         Path to the directory where the data should be stored. Will be overwritten, if the
-        environment variable `IRDL_DATA_DIR` is set. Default is the user cache directory.
+        environment variable ``IRDL_DATA_DIR`` is set. Default is the user cache directory.
 
     Returns
     -------
-    data : dict
+    data : :class:`dict`
         Dictionary containing the impulse responses and the source and receiver coordinates. The
-        impulse responses are stored in the key 'impulse_response' as a :class:`pyfar.Signal`. The
-        source and receiver coordinates are stored as :class:`pyfar.Coordinates` in the keys
-        'source_coordinates' and 'receiver_coordinates', respectively.
+        impulse responses are stored in the key ``impulse_response`` as a :class:`pyfar.Signal`.
+        The source and receiver coordinates are stored as :class:`pyfar.Coordinates` in the keys
+        ``source_coordinates`` and ``receiver_coordinates``, respectively.
 
     """
     assert kind in ["measured", "modeled"], "kind must be either 'measured' or 'modeled'"
