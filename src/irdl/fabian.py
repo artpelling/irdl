@@ -1,3 +1,5 @@
+"""The FABIAN head-related transfer function data base."""
+
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -10,7 +12,7 @@ from irdl.downloader import CACHE_DIR, pooch_from_doi, process
 def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR):
     """Download and extract the FABIAN HRTF Database v4 from DepositOnce.
 
-    DOI: 10.14279/depositonce-5718.5
+    DOI: `10.14279/depositonce-5718.5 <https://doi.org/10.14279/depositonce-5718.5>`_
 
     Parameters
     ----------

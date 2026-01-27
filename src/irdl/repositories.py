@@ -62,10 +62,10 @@ class DSpaceRepository(DataRepository):
 
         Parameters
         ----------
-        doi : str
-            The DOI that identifies the repository
-        archive_url : str
-            The resolved URL for the DOI
+        doi : :class:`str`
+            The DOI that identifies the repository.
+        archive_url : :class:`str`
+            The resolved URL for the DOI.
 
         """
         # Check whether this is a Figshare URL
@@ -108,12 +108,12 @@ class DSpaceRepository(DataRepository):
 
         Parameters
         ----------
-        file_name : str
+        file_name : :class:`str`
             The name of the file in the archive that will be downloaded.
 
         Returns
         -------
-        download_url : str
+        download_url : :class:`str`
             The HTTP URL that can be used to download the file.
 
         """
@@ -124,7 +124,7 @@ class DSpaceRepository(DataRepository):
 
         Parameters
         ----------
-        pooch : Pooch
+        pooch : :class:`pooch.Pooch`
             The pooch instance that the registry will be added to.
 
         """
@@ -140,13 +140,13 @@ def doi_to_repository(doi):
 
     Parameters
     ----------
-    doi : str
+    doi : :class:`str`
         The DOI of the archive.
 
     Returns
     -------
-    data_repository : DataRepository
-        The data repository object
+    data_repository : :class:`DataRepository`
+        The data repository object.
 
     """
     # This should go away in a separate issue: DOI handling should
