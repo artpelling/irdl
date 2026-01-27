@@ -14,7 +14,7 @@ extensions = [
     "sphinx.ext.intersphinx",
 ]
 
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 html_theme = "pydata_sphinx_theme"
 html_theme_options = {

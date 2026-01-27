@@ -8,7 +8,6 @@ from numpydoc.docscrape import FunctionDoc
 
 import irdl
 
-
 # Typer app that can be invoked by calling ``irdl`` from the CLI.
 app = typer.Typer(no_args_is_help=True)
 
@@ -18,7 +17,7 @@ for get_dataset in [getattr(irdl, d) for d in irdl.__all__]:
     doc = FunctionDoc(get_dataset)
     sig = signature(get_dataset)
     typer_parameters = [
-        p.replace(annotation=Annotated[p.annotation, typer.Option(help=" ".join(d.desc).replace('`', ''))])
+        p.replace(annotation=Annotated[p.annotation, typer.Option(help=" ".join(d.desc).replace("`", ""))])
         for p, d in zip(sig.parameters.values(), doc["Parameters"], strict=True)
     ]
     get_dataset.__signature__ = sig.replace(parameters=typer_parameters)
