@@ -15,8 +15,8 @@ help:
 .PHONY: help Makefile
 
 cli:
-	irdl --help > cli-help.txt
-	irdl miracle --help > cli-miracle-help.txt
+	irdl --help | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" > cli-help.txt
+	irdl miracle --help | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" > cli-miracle-help.txt
 
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
