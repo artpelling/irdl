@@ -1,9 +1,12 @@
+"""Implements download and post-processing based on pooch."""
+
 from pathlib import Path
 
 import pooch as po
 
 from irdl.repositories import doi_to_repository
 
+#: The cache directory for storage of the temporary downloads. Defaults to the user cache directory.
 CACHE_DIR = po.os_cache("irdl")
 
 
@@ -12,14 +15,14 @@ def pooch_from_doi(doi, path=CACHE_DIR):
 
     Parameters
     ----------
-    doi : str
+    doi : :class:`str`
         The DOI of the archive.
-    path : str
+    path : :class:`str`
         Path to the directory where the data should be stored.
 
     Returns
     -------
-    pup : Pooch
+    pup : :class:`pooch.Pooch`
         The Pooch instance.
 
     """
