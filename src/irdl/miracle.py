@@ -7,6 +7,7 @@ import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
 
+
 def load_h5(file):
     """Load raw arrays from an HDF5 file.
 
@@ -48,7 +49,7 @@ def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str 
         environment variable `IRDL_DATA_DIR` is set. Default is the user cache directory.
     output_format : :class:`str`
     Output format of the returned data. Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
-    
+
     Returns
     -------
     data : :class:`dict` or :class:`pathlib.Path`
@@ -76,32 +77,25 @@ def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str 
 
     @process #is always true because we dont extract and pup.fetch checks if file exists already => remove?
     def process_miracle(file, process=True):
-        
-        match output_format:
 
+        match output_format:
             case "hdf5":
                 return file
-            
             case "pyfar":
                 ir, fs, spos, rpos = load_h5(file)
-
                 data = dict()
                 data["impulse_response"] = pf.Signal(ir, sampling_rate=fs)
                 data["source_coordinates"] = pf.Coordinates(*spos.T)
                 data["receiver_coordinates"] = pf.Coordinates(*rpos.T)
-
                 return data
-        
             case "numpy":
                 ir, fs, spos, rpos = load_h5(file)
-
                 data = {
-                    "impulse_response" : ir, 
-                    "source_coordinates": spos, 
+                    "impulse_response" : ir,
+                    "source_coordinates": spos,
                     "receiver_coordinates" : rpos,
                     "sampling_rate" : fs,
                 }
-
                 return data
 
     return process_miracle(path / scenario, action="fetch", pup=pup)

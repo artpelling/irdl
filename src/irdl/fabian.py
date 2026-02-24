@@ -3,13 +3,13 @@
 from pathlib import Path
 from zipfile import ZipFile
 
+import h5py as h5
+import numpy as np
 import pooch as po
 import pyfar as pf
 
-import h5py as h5
-import numpy as np
-
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+
 
 def load_sofa(file):
     """Load raw arrays from a SOFA file.
@@ -57,12 +57,11 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
         environment variable ``IRDL_DATA_DIR`` is set. Default is the user cache directory.
     output_format : :class:`str`
     Output format of the returned data. Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
-        
+
     Returns
     -------
     data : :class:`dict` or :class:`pathlib.Path`
         Returned data depends on ``output_format``:
-
         - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`), and
           ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`).
@@ -108,7 +107,6 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
                     )
                 )
                 return data
-        
             case "hdf5":
                 #define h5 file path
                 h5_path = file.with_suffix(".h5")
@@ -117,32 +115,26 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
                     #load data from sofa file
                     ir, fs, spos, rpos = load_sofa(file)
                     #convert pyfar object to h5 file
-                    with h5.File(h5_path , "w") as f: 
+                    with h5.File(h5_path , "w") as f:
                         data_group = f.create_group("data")
                         data_group.create_dataset("impulse_response", data=ir)
                         location_group = data_group.create_group("location")
                         location_group.create_dataset("receiver", data=rpos)
                         location_group.create_dataset("source", data=spos)
-                    
                         metadata_group = f.create_group("metadata")
                         metadata_group.create_dataset("sampling_rate", data=fs)
                 #delete sofa file
                 Path(file).unlink(missing_ok=True)
-
                 return h5_path
-            
             case "numpy":
                 #read sofa and convert pyfar object into numpy arrays and a float
                 ir, fs, spos, rpos = load_sofa(file)
-
                 data = {
-                    "impulse_response" : ir, 
-                    "source_coordinates": spos, 
+                    "impulse_response" : ir,
+                    "source_coordinates": spos,
                     "receiver_coordinates" : rpos,
                     "sampling_rate" : fs,
                 }
-
                 return data
-
 
     return extract(path / f"FABIAN_HRIR_{kind}_HATO_{hato}.sofa", action="fetch", pup=pup)
