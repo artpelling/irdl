@@ -29,11 +29,12 @@ def load_h5(file):
 
     """
     with h5.File(file, "r") as f:
-        ir   = f["data"]["impulse_response"][()]
-        fs   = f["metadata"]["sampling_rate"][()]
+        ir = f["data"]["impulse_response"][()]
+        fs = f["metadata"]["sampling_rate"][()]
         spos = f["data"]["location"]["source"][()]
         rpos = f["data"]["location"]["receiver"][()]
     return ir, fs, spos, rpos
+
 
 def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str = "pyfar"):
     """Download and extract the MIRACLE database from DepositOnce.
@@ -75,9 +76,8 @@ def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str 
     pup = pooch_from_doi(doi, path=path)
     pup.fetch(scenario, progressbar=True)
 
-    @process #is always true because we dont extract and pup.fetch checks if file exists already => remove?
+    @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
     def process_miracle(file, process=True):
-
         match output_format:
             case "hdf5":
                 return file
@@ -91,10 +91,10 @@ def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str 
             case "numpy":
                 ir, fs, spos, rpos = load_h5(file)
                 data = {
-                    "impulse_response" : ir,
+                    "impulse_response": ir,
                     "source_coordinates": spos,
-                    "receiver_coordinates" : rpos,
-                    "sampling_rate" : fs,
+                    "receiver_coordinates": rpos,
+                    "sampling_rate": fs,
                 }
                 return data
 

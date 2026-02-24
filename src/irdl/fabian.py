@@ -32,13 +32,14 @@ def load_sofa(file):
 
     """
     pyfar_obj = pf.io.read_sofa(file)
-    ir   = pyfar_obj[0].time
-    fs   = pyfar_obj[0].sampling_rate
+    ir = pyfar_obj[0].time
+    fs = pyfar_obj[0].sampling_rate
     spos = pyfar_obj[1].cartesian
     rpos = pyfar_obj[2].cartesian
 
     rpos = np.squeeze(rpos, axis=1)
     return ir, fs, spos, rpos
+
 
 def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, output_format: str = "pyfar"):
     """Download and extract the FABIAN HRTF Database v4 from DepositOnce.
@@ -108,14 +109,14 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
                 )
                 return data
             case "hdf5":
-                #define h5 file path
+                # define h5 file path
                 h5_path = file.with_suffix(".h5")
-                #if files does not exist already
+                # if files does not exist already
                 if not h5_path.exists():
-                    #load data from sofa file
+                    # load data from sofa file
                     ir, fs, spos, rpos = load_sofa(file)
-                    #convert pyfar object to h5 file
-                    with h5.File(h5_path , "w") as f:
+                    # convert pyfar object to h5 file
+                    with h5.File(h5_path, "w") as f:
                         data_group = f.create_group("data")
                         data_group.create_dataset("impulse_response", data=ir)
                         location_group = data_group.create_group("location")
@@ -123,17 +124,17 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
                         location_group.create_dataset("source", data=spos)
                         metadata_group = f.create_group("metadata")
                         metadata_group.create_dataset("sampling_rate", data=fs)
-                #delete sofa file
+                # delete sofa file
                 Path(file).unlink(missing_ok=True)
                 return h5_path
             case "numpy":
-                #read sofa and convert pyfar object into numpy arrays and a float
+                # read sofa and convert pyfar object into numpy arrays and a float
                 ir, fs, spos, rpos = load_sofa(file)
                 data = {
-                    "impulse_response" : ir,
+                    "impulse_response": ir,
                     "source_coordinates": spos,
-                    "receiver_coordinates" : rpos,
-                    "sampling_rate" : fs,
+                    "receiver_coordinates": rpos,
+                    "sampling_rate": fs,
                 }
                 return data
 
