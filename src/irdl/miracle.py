@@ -49,7 +49,8 @@ def get_miracle(scenario: str = "A1", path: str = CACHE_DIR, output_format: str 
         Path to the directory where the data should be stored. Will be overwritten, if the
         environment variable `IRDL_DATA_DIR` is set. Default is the user cache directory.
     output_format : :class:`str`
-    Output format of the returned data. Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
+        Output format of the returned data. Either ``'pyfar'`` (default), ``'hdf5'``, or
+        ``'numpy'``.
 
     Returns
     -------
