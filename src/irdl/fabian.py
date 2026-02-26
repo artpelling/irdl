@@ -64,11 +64,12 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
     -------
     data : :class:`dict` or :class:`pathlib.Path`
         Returned data depends on ``output_format``:
-        - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
+        
+        - ``'pyfar'`` : :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`), and
           ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`).
-        - ``'hdf5'``: :class:`pathlib.Path` to the HDF5 file containing the data.
-        - ``'numpy'``: :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
+        - ``'hdf5'`` : :class:`pathlib.Path` to the HDF5 file containing the data.
+        - ``'numpy'`` : :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
           ``'source_coordinates'`` (:class:`numpy.ndarray`),
           ``'receiver_coordinates'`` (:class:`numpy.ndarray`), and
           ``'sampling_rate'`` (:class:`float`).
