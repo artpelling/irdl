@@ -12,7 +12,8 @@ Room impulse responses
   :caption: Room impulse responses
   :toctree: _autosummary
 
-  miracle
+  get_miracle
+  get_sriracha
 
 Head-related impulse responses
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -20,7 +21,7 @@ Head-related impulse responses
   :caption: Head-related impulse responses
   :toctree: _autosummary
 
-  fabian
+  get_fabian
 
 Internal modules
 ----------------

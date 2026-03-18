@@ -130,7 +130,7 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
     -------
     data : :class:`dict` or :class:`pathlib.Path`
         Returned data depends on ``output_format``:
-        
+
         - ``'pyfar'`` : :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`), and
           ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`).
