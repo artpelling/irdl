@@ -11,6 +11,33 @@ import pyfar as pf
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
 
 
+def sofa_to_pyfar(file):
+    """Load data from a SOFA file and return as dictionary of pyfar objects.
+
+    Parameters
+    ----------
+    file : :class:`pathlib.Path` or :class:`str`
+        Path to the SOFA file.
+
+    Returns
+    -------
+    data : :class:`dict`
+        Dictionary with the following keys:
+
+        - ``'impulse_response'`` : :class:`pyfar.Signal` — Impulse response data.
+        - ``'source_coordinates'`` : :class:`pyfar.Coordinates` — Source positions.
+        - ``'receiver_coordinates'`` : :class:`pyfar.Coordinates` — Receiver positions.
+
+    """
+    return dict(
+        zip(
+            ("impulse_response", "source_coordinates", "receiver_coordinates"),
+            pf.io.read_sofa(file),
+            strict=True,
+        )
+    )
+
+
 def load_sofa(file):
     """Load raw arrays from a SOFA file.
 
@@ -21,24 +48,63 @@ def load_sofa(file):
 
     Returns
     -------
-    ir : :class:`numpy.ndarray`
-        Impulse response data.
-    fs : :class:`float`
-        Sampling rate in Hz.
-    spos : :class:`numpy.ndarray`
-        Source positions as cartesian coordinates.
-    rpos : :class:`numpy.ndarray`
-        Receiver positions as cartesian coordinates.
+    data : :class:`dict`
+        Dictionary with the following keys:
+
+        - ``'impulse_response'`` : :class:`numpy.ndarray` — Impulse response data.
+        - ``'source_coordinates'`` : :class:`numpy.ndarray` — Source positions as cartesian
+          coordinates.
+        - ``'receiver_coordinates'`` : :class:`numpy.ndarray` — Receiver positions as cartesian
+          coordinates.
+        - ``'sampling_rate'`` : :class:`float` — Sampling rate in Hz.
 
     """
     pyfar_obj = pf.io.read_sofa(file)
-    ir = pyfar_obj[0].time
-    fs = pyfar_obj[0].sampling_rate
-    spos = pyfar_obj[1].cartesian
-    rpos = pyfar_obj[2].cartesian
 
-    rpos = np.squeeze(rpos, axis=1)
-    return ir, fs, spos, rpos
+    return {
+        "impulse_response": pyfar_obj[0].time,
+        "source_coordinates": pyfar_obj[1].cartesian,
+        # fabian need the squeeze, maybe other datasets dont?
+        "receiver_coordinates": np.squeeze(pyfar_obj[2].cartesian, axis=1),
+        "sampling_rate": pyfar_obj[0].sampling_rate,
+    }
+
+
+def sofa_to_h5(file, extracted_already):
+    """Convert a SOFA file to HDF5 format and return the path.
+
+    Parameters
+    ----------
+    file : :class:`pathlib.Path` or :class:`str`
+        Path to the SOFA file.
+    extracted_already : :class:`bool`
+        Check whether the SOFA file existed before extraction. If ``False``, the SOFA
+        file is deleted after conversion.
+
+    Returns
+    -------
+    h5_path : :class:`pathlib.Path`
+        Path to the converted HDF5 file.
+
+    """
+    # define h5 file path
+    h5_path = Path(file).with_suffix(".h5")
+    # if files does not exist already
+    if not h5_path.exists():
+        data = load_sofa(file)
+        # parse dictionary to h5 file
+        with h5.File(h5_path, "w") as f:
+            data_group = f.create_group("data")
+            data_group.create_dataset("impulse_response", data=data["impulse_response"])
+            location_group = data_group.create_group("location")
+            location_group.create_dataset("source", data=data["source_coordinates"])
+            location_group.create_dataset("receiver", data=data["receiver_coordinates"])
+            metadata_group = f.create_group("metadata")
+            metadata_group.create_dataset("sampling_rate", data=data["sampling_rate"])
+    # delete sofa file if the file was just extracted for the conversion
+    if not extracted_already:
+        Path(file).unlink(missing_ok=True)
+    return h5_path
 
 
 def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, output_format: str = "pyfar"):
@@ -57,8 +123,8 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
         Path to the directory where the data should be stored. Will be overwritten, if the
         environment variable ``IRDL_DATA_DIR`` is set. Default is the user cache directory.
     output_format : :class:`str`
-        Output format of the returned data. Either ``'pyfar'`` (default), ``'hdf5'``, or
-        ``'numpy'``.
+        Output format of the returned data.
+        Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
 
     Returns
     -------
@@ -92,6 +158,8 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
 
     @process
     def extract(file, process=True):
+        # check if file was extracted already
+        extracted_already = file.exists()
         if process:
             with ZipFile(Path(path) / zipfile, "r") as zf:
                 for name in zf.namelist():
@@ -102,42 +170,10 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
 
         match output_format:
             case "pyfar":
-                data = dict(
-                    zip(
-                        ("impulse_response", "source_coordinates", "receiver_coordinates"),
-                        pf.io.read_sofa(file),
-                        strict=True,
-                    )
-                )
-                return data
+                return sofa_to_pyfar(file)
             case "hdf5":
-                # define h5 file path
-                h5_path = file.with_suffix(".h5")
-                # if files does not exist already
-                if not h5_path.exists():
-                    # load data from sofa file
-                    ir, fs, spos, rpos = load_sofa(file)
-                    # convert pyfar object to h5 file
-                    with h5.File(h5_path, "w") as f:
-                        data_group = f.create_group("data")
-                        data_group.create_dataset("impulse_response", data=ir)
-                        location_group = data_group.create_group("location")
-                        location_group.create_dataset("receiver", data=rpos)
-                        location_group.create_dataset("source", data=spos)
-                        metadata_group = f.create_group("metadata")
-                        metadata_group.create_dataset("sampling_rate", data=fs)
-                # delete sofa file
-                Path(file).unlink(missing_ok=True)
-                return h5_path
+                return sofa_to_h5(file, extracted_already=extracted_already)
             case "numpy":
-                # read sofa and convert pyfar object into numpy arrays and a float
-                ir, fs, spos, rpos = load_sofa(file)
-                data = {
-                    "impulse_response": ir,
-                    "source_coordinates": spos,
-                    "receiver_coordinates": rpos,
-                    "sampling_rate": fs,
-                }
-                return data
+                return load_sofa(file)
 
     return extract(path / f"FABIAN_HRIR_{kind}_HATO_{hato}.sofa", action="fetch", pup=pup)

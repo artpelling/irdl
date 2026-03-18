@@ -1,6 +1,6 @@
 """Automatic generation of a Typer script for all datasets that can be used for download."""
 
-from inspect import getmodule, signature
+from inspect import signature
 from typing import Annotated
 
 import typer
@@ -23,7 +23,7 @@ for get_dataset in [getattr(irdl, d) for d in irdl.__all__]:
     get_dataset.__signature__ = sig.replace(parameters=typer_parameters)
     # register a subcommand to the main app and add --help information based on the docstring.
     app.command(
-        name=getmodule(get_dataset).__name__.split(".")[1],
+        name=get_dataset.__name__.removeprefix("get_"),
         help=doc["Summary"][0] + "\n\n" + " ".join(doc["Extended Summary"]),
     )(get_dataset)
 
