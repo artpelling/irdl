@@ -1,4 +1,4 @@
-"""The FABIAN head-related transfer function data base."""
+"""Impulse response datasets in SOFA format."""
 
 from pathlib import Path
 from zipfile import ZipFile
