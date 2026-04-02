@@ -32,8 +32,6 @@ def load_h5(file):
           coordinates.
         - ``'source_coordinates'`` : :class:`numpy.ndarray` — Corrected source positions as
           cartesian coordinates.
-        - ``'uncorrected_source_coordinates'`` : :class:`numpy.ndarray` — Uncorrected source
-          positions as cartesian coordinates.
         - ``'speed_of_sound'`` : :class:`numpy.ndarray` — Speed of sound per source position in
           m/s.
         - ``'temperature'`` : :class:`numpy.ndarray` — Ambient temperature per source position
@@ -49,7 +47,6 @@ def load_h5(file):
             "impulse_response": f["data"]["impulse_response"][()],
             "receiver_coordinates": f["data"]["location"]["receiver"][()],
             "source_coordinates": f["data"]["location"]["source"][()],
-            "uncorrected_source_coordinates": f["data"]["location"]["source_raw"][()],
             # metadata
             "speed_of_sound": f["metadata"]["c0"][()],
             "temperature": f["metadata"]["temperature"][()],
@@ -87,9 +84,6 @@ def h5_to_pyfar(file, dataset_split=None):
         - ``'impulse_response'`` : :class:`pyfar.Signal` — Impulse response data.
         - ``'source_coordinates'`` : :class:`pyfar.Coordinates` — Corrected source positions.
         - ``'receiver_coordinates'`` : :class:`pyfar.Coordinates` — Receiver positions.
-        - ``'uncorrected_source_coordinates'`` : :class:`pyfar.Coordinates` — Uncorrected source
-          positions.
-
     """
     data = load_h5(file)
 
@@ -99,7 +93,6 @@ def h5_to_pyfar(file, dataset_split=None):
     data["impulse_response"] = pf.Signal(data["impulse_response"], sampling_rate=data["sampling_rate"])
     data["source_coordinates"] = pf.Coordinates(*data["source_coordinates"].T)
     data["receiver_coordinates"] = pf.Coordinates(*data["receiver_coordinates"].T)
-    data["uncorrected_source_coordinates"] = pf.Coordinates(*data["uncorrected_source_coordinates"].T)
 
     for key in ["sampling_rate", "speed_of_sound", "temperature", "humidity"]:
         data.pop(key, None)
@@ -123,8 +116,7 @@ def split_data(data, dataset_split):
     Returns
     -------
     data : :class:`dict`
-        Input dictionary with ``'source_coordinates'``,
-        ``'uncorrected_source_coordinates'``, and ``'impulse_response'`` filtered
+        Input dictionary with ``'source_coordinates'``, and ``'impulse_response'`` filtered
         to the requested dataset split.
 
     """
@@ -138,9 +130,6 @@ def split_data(data, dataset_split):
 
     # reshaping, slicing and reshape back to original shape
     data["source_coordinates"] = data["source_coordinates"].reshape(n, n, 3)[row::2, column::2, :].reshape(-1, 3)
-    data["uncorrected_source_coordinates"] = (
-        data["uncorrected_source_coordinates"].reshape(n, n, 3)[row::2, column::2, :].reshape(-1, 3)
-    )
     data["impulse_response"] = (
         data["impulse_response"].reshape(n, n, *ir_shape[1:])[row::2, column::2, :].reshape(-1, *ir_shape[1:])
     )
@@ -174,7 +163,6 @@ def save_h5(data, path):
         location_group = data_group.create_group("location")
         location_group.create_dataset("source", data=data["source_coordinates"])
         location_group.create_dataset("receiver", data=data["receiver_coordinates"])
-        location_group.create_dataset("source_raw", data=data["uncorrected_source_coordinates"])
         metadata_group = f.create_group("metadata")
         metadata_group.create_dataset("c0", data=data["speed_of_sound"])
         metadata_group.create_dataset("temperature", data=data["temperature"])
@@ -211,8 +199,7 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
 
         - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`), and
-          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`) and
-          ``'uncorrected_source_coordinates'`` (:class:`pyfar.Coordinates`).
+          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`)
         - ``'hdf5'``: :class:`pathlib.Path` to the HDF5 file containing the data.
         - ``'numpy'``: :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
           ``'source_coordinates'`` (:class:`numpy.ndarray`),
@@ -283,12 +270,10 @@ def get_sriracha(
         - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`),
           ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`), and
-          ``'uncorrected_source_coordinates'`` (:class:`pyfar.Coordinates`).
         - ``'hdf5'``: :class:`pathlib.Path` to the HDF5 file containing the data.
         - ``'numpy'``: :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
           ``'source_coordinates'`` (:class:`numpy.ndarray`),
           ``'receiver_coordinates'`` (:class:`numpy.ndarray`),
-          ``'uncorrected_source_coordinates'`` (:class:`numpy.ndarray`),
           ``'speed_of_sound'`` (:class:`numpy.ndarray`),
           ``'temperature'`` (:class:`numpy.ndarray`),
           ``'sampling_rate'`` (:class:`int`), and optionally
