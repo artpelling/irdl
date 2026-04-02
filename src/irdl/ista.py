@@ -209,7 +209,7 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
     """
     assert output_format in ["pyfar", "hdf5", "numpy"], "unknown output format"
     assert scenario in ["A1", "A2", "D1", "R2"], "scenario must be one of ['A1', 'A2', 'D1', 'R2']"
-    assert dataset_split in [None, "C1", "C2", "C3", "C4"], "datasetsplit must be None or in [C1, C2, C3, C4]"
+    assert dataset_split in [None, "C1", "C2", "C3", "C4"], "dataset_split must be None or in [C1, C2, C3, C4]"
 
     scenario += ".h5"
 
@@ -285,7 +285,7 @@ def get_sriracha(
         "scenario must be one of [SR1, SRA1, SR1-D, SRA1-D, SR2, SRA2, SR2-D, SRA2-D]"
     )
 
-    assert dataset_split in [None, "C1", "C2", "C3", "C4"], "datasetsplit must be None or in [C1, C2, C3, C4]"
+    assert dataset_split in [None, "C1", "C2", "C3", "C4"], "dataset_split must be None or in [C1, C2, C3, C4]"
 
     assert not (scenario[-1] != "D" and dataset_split is None), "full datasets need a split"
     assert not (scenario[-1] == "D" and dataset_split is not None), "dense datasets do not have splits"
