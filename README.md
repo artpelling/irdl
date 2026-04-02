@@ -6,10 +6,13 @@
 Python package to download, unpack and process impulse response datasets in a unified way.
 
 ## Highlights
-- Returns a standardised dictionary of [`pyfar`](https://pyfar.org)-objects.
+- Returns data in a standardised format either
+  - a dictionary of [`pyfar`](https://pyfar.org)-objects (default)
+  - a dictionary of NumPy arrays
+  - a path to an HDF5-file for partial data access not having to load the entire data into memory 
 - Leverages [`pooch`](https://www.fatiando.org/pooch/latest/) to download impulse response datasets and verifies their integrity with a checksum. 
 - Only downloads, extracts and processes what is actually needed.
-- Adds `pooch`-support for dSpace repositories, such as [depositonce](https://depositonce.tu-berlin.de/home).
+- Adds `pooch`-support for dSpace repositories, such as TU Berlin [depositonce](https://depositonce.tu-berlin.de/home).
 - Data storage location can be set by `IRDL_DATA_DIR` environmental variable (defaults to user cache directory).
 
 ## Links
