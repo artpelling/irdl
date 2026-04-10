@@ -1,0 +1,28 @@
+name: Check links
+permissions:
+  contents: read
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_call:
+    inputs:
+      extra_args:
+        description: 'Extra arguments to pass to Lychee.'
+        type: string
+        required: false
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: check links
+        id: lychee
+        uses: lycheeverse/lychee-action@v2.7.0
+        with:
+          # Check all markdown, html and reStructuredText files in repo (default)
+          args: --root-dir $(pwd) --no-progress './**/*.md' './**/*.html' './**/*.rst' ${{ inputs.extra_args }}
+          fail: true
+          failIfEmpty: false
