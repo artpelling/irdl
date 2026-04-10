@@ -1,0 +1,4 @@
+﻿``miracle``
+============
+
+.. automodule:: irdl.miracle
