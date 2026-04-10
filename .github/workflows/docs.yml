@@ -1,5 +1,5 @@
-name: Docs
-
+name: "Docs 📝 Build 🛠️ & Deploy"
+run-name: Build Docs 🛠️ & Publish to GitHub Pages 📝
 on:
   pull_request:
     branches: [ main ]
