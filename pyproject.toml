@@ -35,14 +35,18 @@ irdl = "irdl.cli:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.version]
-path = "src/irdl/__init__.py"
-
 [tool.hatch.build.targets.sdist]
 include = ["irdl"]
 
 [tool.hatch.build.targets.wheel]
 package = ["irdl"]
+
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+publish-url = "https://upload.pypi.org/legacy/"
+explicit = true
 
 
 [tool.basedpyright]
