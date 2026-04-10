@@ -2,6 +2,10 @@ name: Check links
 permissions:
   contents: read
 on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_call:
     inputs:
       extra_args:
