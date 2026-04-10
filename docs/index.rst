@@ -53,5 +53,6 @@ The supported datasets are available as subcommands, i.e.
    :hidden:
 
    Installation <installation>
+   Available Datasets <datasets>
    CLI Reference <cli_ref>
    API Reference <api_ref>

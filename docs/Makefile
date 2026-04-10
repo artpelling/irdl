@@ -2,7 +2,7 @@
 #
 
 # You can set these variables from the command line.
-SPHINXOPTS    =
+SPHINXOPTS    = --fail-on-warning -W
 SPHINXBUILD   = python -msphinx
 SPHINXPROJ    = irdl
 SOURCEDIR     = .
@@ -12,7 +12,7 @@ BUILDDIR      = build
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
-.PHONY: help Makefile
+.PHONY: help Makefile cli
 
 cli:
 	irdl --help | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" > cli-help.txt
@@ -24,4 +24,4 @@ cli:
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
 
 clean:
-	rm -rf build _autosummary
+	rm -rf build _autosummary cli-help.txt cli-miracle-help.txt
