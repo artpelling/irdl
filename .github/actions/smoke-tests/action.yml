@@ -1,0 +1,17 @@
+name: 'Smoke Tests'
+description: 'Run Smoke Tests'
+inputs:
+  command:
+    description: 'The uv command to invoke the smoke tests.'
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Test Import
+      run: ${{ inputs.command }} python -c "import irdl"
+      shell: bash -e {0}
+    - name: Check CLI
+      run: |
+        ${{ inputs.command }} irdl --help
+        ${{ inputs.command }} irdl miracle --help
+      shell: bash -e {0}

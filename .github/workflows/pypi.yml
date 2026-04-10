@@ -1,0 +1,30 @@
+name: PyPI 📦 Build
+permissions:
+  contents: read
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build distribution 📦
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out a copy of the repository
+        uses: actions/checkout@v6
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+      - name: Build a binary wheel and a source tarball
+        run: uv build
+      - name: Run smoke tests (wheel)
+        uses: artpelling/irdl/.github/actions/smoke-tests@main
+        with:
+          command: uv run --isolated --no-project --with dist/*.whl
+      - name: Run smoke tests (sdist)
+        uses: artpelling/irdl/.github/actions/smoke-tests@main
+        with:
+          command: uv run --isolated --no-project --with dist/*.tar.gz
+      - name: Store the distribution packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: package-build
+          path: dist/
