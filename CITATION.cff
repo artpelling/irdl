@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+title: irdl – Download, unpack and process impulse response datasets.
+message: >-
+  If you use this software, please cite the software using the metadata from this file.
+type: software
+authors:
+  - given-names: "Art J. R."
+    family-names: "Pelling"
+    affiliation: "Department of Engineering Acoustics, TU Berlin"
+    orcid: "https://orcid.org/0000-0003-3228-6069"
+  - given-names: "Siavash"
+    family-names: "Zaid"
+    affiliation: "Department of Engineering Acoustics, TU Berlin"
+identifiers:
+  - description: "irdl: all versions"
+    type: "doi"
+    value: "10.5281/zenodo.XXXXXXX"
+repository-code: "https://github.com/artpelling/irdl"
+url: "https://artpelling.github.io/irdl"
+license: "MIT"
+version: "1.0.0"
+date-released: "2026-04-10"
+contact:
+  - email: "a.pelling@tu-berlin.de"
+    name: "Art J. R. Pelling"

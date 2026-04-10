@@ -1,6 +1,6 @@
 [project]
 name = "irdl"
-dynamic = ["version"]
+version = "1.0.0a1"
 description = "Python package to download, unpack and process impulse response datasets."
 readme = "README.md"
 authors = [

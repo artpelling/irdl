@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-    branches: [ '*' ]
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -26,18 +26,18 @@ jobs:
       - name: Run sphinx
         run: uv run --frozen make -C docs html
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: build-docs
           path: ./docs/build/html
 
   deploy:
     needs: build
-    if: ${{ github.event_name =='workflow_dispatch' && github.ref == 'refs/heads/main' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: build-docs
           path: ./docs/build/html
