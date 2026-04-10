@@ -1,10 +1,11 @@
 [project]
 name = "irdl"
-version = "1.0.0a1"
+version = "1.0.0a2"
 description = "Python package to download, unpack and process impulse response datasets."
 readme = "README.md"
 authors = [
-    { name = "Art Pelling", email = "a.pelling@tu-berlin.de" }
+    { name = "Art Pelling", email = "a.pelling@tu-berlin.de" },
+    { name = "Siavash Zaid", email = "siavash.zaid@campus.tu-berlin.de" },
 ]
 requires-python = ">=3.11"
 license = {file = "LICENSE"}

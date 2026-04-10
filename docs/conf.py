@@ -1,9 +1,11 @@
-import irdl
+import importlib.metadata
+
+metadata = importlib.metadata.metadata("irdl")
 
 project = "irdl"
-author = irdl.__author__
-copyright = f"{irdl.__date__.split(' ')[-1]}, {irdl.__author__}"
-version = irdl.__version__
+author = "Art J. R. Pelling"
+copyright = f"2025-%Y, {author}"
+version = metadata["Version"]
 
 extensions = [
     "numpydoc",

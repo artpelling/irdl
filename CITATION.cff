@@ -14,7 +14,7 @@ authors:
 identifiers:
   - description: "irdl: all versions"
     type: "doi"
-    value: "10.5281/zenodo.XXXXXXX"
+    value: "10.5281/zenodo.19496801"
 repository-code: "https://github.com/artpelling/irdl"
 url: "https://artpelling.github.io/irdl"
 license: "MIT"

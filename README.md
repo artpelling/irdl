@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19496801.svg)](https://doi.org/10.5281/zenodo.19496801)
+
 # `irdl`: Impulse Response Downloader
 Python package to download, unpack and process impulse response datasets in a unified way.
 
