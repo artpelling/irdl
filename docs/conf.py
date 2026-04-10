@@ -1,9 +1,10 @@
+import importlib.metadata
 import irdl
 
 project = "irdl"
 author = irdl.__author__
 copyright = f"2026, {irdl.__author__}"
-version = irdl.__version__
+version = importlib.metadata.version('irdl')
 
 extensions = [
     "numpydoc",

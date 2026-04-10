@@ -524,6 +524,7 @@ wheels = [
 
 [[package]]
 name = "irdl"
+version = "1.0.0a2"
 source = { editable = "." }
 dependencies = [
     { name = "h5py" },
