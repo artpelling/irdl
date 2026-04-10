@@ -1,5 +1,4 @@
 import importlib.metadata
-import irdl
 
 metadata = importlib.metadata.metadata("irdl")
 
