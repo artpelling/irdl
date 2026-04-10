@@ -9,7 +9,7 @@ Python package to download, unpack and process impulse response datasets in a un
 - Data storage location can be set by `IRDL_DATA_DIR` environmental variable (defaults to user cache directory).
 
 ## Links
-- [Documentation](https://artpelling.github.io/irdl)
+- [Documentation](https://artpelling.github.io/irdl/)
 - [Installation instructions](https://artpelling.github.io/irdl/installation.html)
 - [Available Datasets](https://artpelling.github.io/irdl/api_ref.html)
 - [CLI Reference](https://artpelling.github.io/irdl/cli_ref.html)
