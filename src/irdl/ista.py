@@ -13,6 +13,7 @@ import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
 
+
 def download_and_merge(scenario, path, pup):
     """Download and merge four quadrant-split HDF5 files into one full-plane dataset.
 
@@ -38,7 +39,7 @@ def download_and_merge(scenario, path, pup):
     output_path = path / f"{scenario}.h5"
     if output_path.exists():
         return output_path
-    
+
     offsets = {"C1": (0, 0), "C2": (0, 1), "C3": (1, 0), "C4": (1, 1)}
 
     # download split files
@@ -50,7 +51,7 @@ def download_and_merge(scenario, path, pup):
 
     # read shapes and shared metadata from the first split
     with h5.File(split_files["C1"], "r") as f:
-        ir_shape = f["data"]["impulse_response"].shape  
+        ir_shape = f["data"]["impulse_response"].shape
         ir_dtype = f["data"]["impulse_response"].dtype
         n_split = ir_shape[0]
         sampling_rate = f["metadata"]["sampling_rate"][()]
@@ -65,9 +66,7 @@ def download_and_merge(scenario, path, pup):
     with h5.File(output_path, "w") as out:
         # create groups and datasets
         data_grp = out.create_group("data")
-        ir_ds = data_grp.create_dataset(
-            "impulse_response", shape=(n_sources, *ir_shape[1:]), dtype=ir_dtype
-        )
+        ir_ds = data_grp.create_dataset("impulse_response", shape=(n_sources, *ir_shape[1:]), dtype=ir_dtype)
         loc_grp = data_grp.create_group("location")
         src_ds = loc_grp.create_dataset("source", shape=(n_sources, 3), dtype="float64")
         loc_grp.create_dataset("receiver", data=receiver)
@@ -79,18 +78,19 @@ def download_and_merge(scenario, path, pup):
         if has_humidity:
             hum_ds = meta_grp.create_dataset("humidity", shape=(n_sources,), dtype="float32")
 
-        #open all split files
+        # open all split files
         handles = {s: h5.File(f, "r") for s, f in split_files.items()}
         try:
             # copy data from each split to the correct location in the output datasets
             for split_name, (row, col) in offsets.items():
                 f = handles[split_name]
                 for r in range(n_split_grid):
-                    #index one row of the split grid
+                    # index one row of the split grid
                     src = slice(r * n_split_grid, (r + 1) * n_split_grid)
                     # map split-grid-row to full-grid-row
                     grid_row = 2 * r + row
-                    # index one row of the full grid, skipping every other entry to interleave splits
+                    # index one row of the full grid, skipping every other entry
+                    # to interleave splits
                     out = slice(grid_row * n_full_grid + col, grid_row * n_full_grid + n_full_grid, 2)
 
                     ir_ds[out] = f["data"]["impulse_response"][src]
@@ -103,7 +103,7 @@ def download_and_merge(scenario, path, pup):
         finally:
             for fh in handles.values():
                 fh.close()
-        
+
         # delete split files
         for f in split_files.values():
             f.unlink()
@@ -176,11 +176,7 @@ def download_and_merge_vds(scenario, path, pup):
         src_vsrc = h5.VirtualSource(fname, "data/location/source", shape=(n_split, 3))
         c0_vsrc = h5.VirtualSource(fname, "metadata/c0", shape=(n_split,))
         temp_vsrc = h5.VirtualSource(fname, "metadata/temperature", shape=(n_split,))
-        hum_vsrc = (
-            h5.VirtualSource(fname, "metadata/humidity", shape=(n_split,))
-            if has_humidity
-            else None
-        )
+        hum_vsrc = h5.VirtualSource(fname, "metadata/humidity", shape=(n_split,)) if has_humidity else None
 
         for r in range(n_split_grid):
             # index one row of the split grid
@@ -506,7 +502,6 @@ def get_sriracha(
             scenario += "-" + dataset_split + ".h5"
 
         pup.fetch(scenario, progressbar=True)
-   
 
     @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
     def process_sriracha(file, process=True):
