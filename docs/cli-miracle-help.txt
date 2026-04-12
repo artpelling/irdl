@@ -1,0 +1,16 @@
+                                                                                                                                                                                                                           
+ Usage: irdl miracle [OPTIONS]                                                                                                                                                                                             
+                                                                                                                                                                                                                           
+ Download and extract the MIRACLE database from DepositOnce.                                                                                                                                                               
+                                                                                                                                                                                                                           
+ DOI: `10.14279/depositonce-20837 <https://doi.org/10.14279/depositonce-20837>`_                                                                                                                                           
+                                                                                                                                                                                                                           
+╭─ Options ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --scenario             TEXT  Name of the scenario to download. Either 'A1', 'A2', 'D1' or 'R2'. [default: A1]                                                                                                           │
+│ --dataset-split        TEXT  Artificial dataset split. Analogous to dataset_split in :func:get_sriracha. One of 'C1', 'C2', 'C3', 'C4', or None (default).                                                              │
+│ --path                 TEXT  Path to the directory where the data should be stored. Will be overwritten, if the environment variable IRDL_DATA_DIR is set. Default is the user cache directory.                         │
+│                              [default: /Users/siavashzaid/Library/Caches/irdl]                                                                                                                                          │
+│ --output-format        TEXT  Output format of the returned data. Either 'pyfar' (default), 'hdf5', or 'numpy'. [default: pyfar]                                                                                         │
+│ --help                       Show this message and exit.                                                                                                                                                                │
+╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+

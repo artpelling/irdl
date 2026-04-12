@@ -13,6 +13,207 @@ import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
 
+def download_and_merge(scenario, path, pup):
+    """Download and merge four quadrant-split HDF5 files into one full-plane dataset.
+
+    Reverses the interleaving performed by :func:`split_data`, writing
+    row-by-row to keep memory usage bounded.
+
+    Parameters
+    ----------
+    scenario : str
+        Base scenario name, e.g. ``'SR1'``.
+    path : Path
+        Directory where HDF5 files are stored.
+    pup : pooch.Pooch
+        Pooch instance for downloading files.
+
+    Returns
+    -------
+    output_path : Path
+        Path to the merged HDF5 file.
+
+    """
+    # check if merged file already exists
+    output_path = path / f"{scenario}.h5"
+    if output_path.exists():
+        return output_path
+    
+    offsets = {"C1": (0, 0), "C2": (0, 1), "C3": (1, 0), "C4": (1, 1)}
+
+    # download split files
+    split_files = {}
+    for split in offsets:
+        fname = f"{scenario}-{split}.h5"
+        pup.fetch(fname, progressbar=True)
+        split_files[split] = path / fname
+
+    # read shapes and shared metadata from the first split
+    with h5.File(split_files["C1"], "r") as f:
+        ir_shape = f["data"]["impulse_response"].shape  
+        ir_dtype = f["data"]["impulse_response"].dtype
+        n_split = ir_shape[0]
+        sampling_rate = f["metadata"]["sampling_rate"][()]
+        receiver = f["data"]["location"]["receiver"][()]
+        has_humidity = "humidity" in f["metadata"]
+
+    # calculate total number of sources and grid dimension
+    n_sources = len(split_files) * n_split
+    n_full_grid = int(np.sqrt(n_sources))
+    n_split_grid = n_full_grid // 2
+
+    with h5.File(output_path, "w") as out:
+        # create groups and datasets
+        data_grp = out.create_group("data")
+        ir_ds = data_grp.create_dataset(
+            "impulse_response", shape=(n_sources, *ir_shape[1:]), dtype=ir_dtype
+        )
+        loc_grp = data_grp.create_group("location")
+        src_ds = loc_grp.create_dataset("source", shape=(n_sources, 3), dtype="float64")
+        loc_grp.create_dataset("receiver", data=receiver)
+
+        meta_grp = out.create_group("metadata")
+        meta_grp.create_dataset("sampling_rate", data=sampling_rate)
+        c0_ds = meta_grp.create_dataset("c0", shape=(n_sources,), dtype="float32")
+        temp_ds = meta_grp.create_dataset("temperature", shape=(n_sources,), dtype="float32")
+        if has_humidity:
+            hum_ds = meta_grp.create_dataset("humidity", shape=(n_sources,), dtype="float32")
+
+        #open all split files
+        handles = {s: h5.File(f, "r") for s, f in split_files.items()}
+        try:
+            # copy data from each split to the correct location in the output datasets
+            for split_name, (row, col) in offsets.items():
+                f = handles[split_name]
+                for r in range(n_split_grid):
+                    #index one row of the split grid
+                    src = slice(r * n_split_grid, (r + 1) * n_split_grid)
+                    # map split-grid-row to full-grid-row
+                    grid_row = 2 * r + row
+                    # index one row of the full grid, skipping every other entry to interleave splits
+                    out = slice(grid_row * n_full_grid + col, grid_row * n_full_grid + n_full_grid, 2)
+
+                    ir_ds[out] = f["data"]["impulse_response"][src]
+                    src_ds[out] = f["data"]["location"]["source"][src]
+                    c0_ds[out] = f["metadata"]["c0"][src]
+                    temp_ds[out] = f["metadata"]["temperature"][src]
+                    if has_humidity:
+                        hum_ds[out] = f["metadata"]["humidity"][src]
+        # close all files
+        finally:
+            for fh in handles.values():
+                fh.close()
+        
+        # delete split files
+        for f in split_files.values():
+            f.unlink()
+
+    return output_path
+
+
+def download_and_merge_vds(scenario, path, pup):
+    """Download splits and create a virtual HDF5 file mapping them into one full-plane dataset.
+
+    The resulting file contains no data — only HDF5 virtual-dataset mappings
+    that point back into the split files. The split files must remain in place.
+
+    Parameters
+    ----------
+    scenario : str
+        Base scenario name, e.g. ``'SR1'``.
+    path : Path
+        Directory where HDF5 files are stored.
+    pup : pooch.Pooch
+        Pooch instance for downloading files.
+
+    Returns
+    -------
+    output_path : Path
+        Path to the virtual HDF5 file.
+
+    """
+    # check if merged file already exists
+    output_path = path / f"{scenario}.h5"
+    if output_path.exists():
+        return output_path
+
+    offsets = {"C1": (0, 0), "C2": (0, 1), "C3": (1, 0), "C4": (1, 1)}
+
+    # download split files
+    split_files = {}
+    for split in offsets:
+        fname = f"{scenario}-{split}.h5"
+        pup.fetch(fname, progressbar=True)
+        split_files[split] = fname  # filename only — keeps VDS relocatable
+
+    # read shapes and shared metadata from the first split
+    with h5.File(path / split_files["C1"], "r") as f:
+        ir_shape = f["data"]["impulse_response"].shape
+        ir_dtype = f["data"]["impulse_response"].dtype
+        src_dtype = f["data"]["location"]["source"].dtype
+        n_split = ir_shape[0]
+        sampling_rate = f["metadata"]["sampling_rate"][()]
+        receiver = f["data"]["location"]["receiver"][()]
+        has_humidity = "humidity" in f["metadata"]
+
+    # calculate total number of sources and grid dimension
+    n_sources = len(split_files) * n_split
+    n_full_grid = int(np.sqrt(n_sources))
+    n_split_grid = n_full_grid // 2
+
+    # build virtual layouts
+    ir_layout = h5.VirtualLayout(shape=(n_sources, *ir_shape[1:]), dtype=ir_dtype)
+    src_layout = h5.VirtualLayout(shape=(n_sources, 3), dtype=src_dtype)
+    c0_layout = h5.VirtualLayout(shape=(n_sources,), dtype="float32")
+    temp_layout = h5.VirtualLayout(shape=(n_sources,), dtype="float32")
+    hum_layout = h5.VirtualLayout(shape=(n_sources,), dtype="float32") if has_humidity else None
+
+    # map each split to the correct location in the output layouts
+    for split_name, (row, col) in offsets.items():
+        fname = split_files[split_name]
+
+        ir_vsrc = h5.VirtualSource(fname, "data/impulse_response", shape=ir_shape)
+        src_vsrc = h5.VirtualSource(fname, "data/location/source", shape=(n_split, 3))
+        c0_vsrc = h5.VirtualSource(fname, "metadata/c0", shape=(n_split,))
+        temp_vsrc = h5.VirtualSource(fname, "metadata/temperature", shape=(n_split,))
+        hum_vsrc = (
+            h5.VirtualSource(fname, "metadata/humidity", shape=(n_split,))
+            if has_humidity
+            else None
+        )
+
+        for r in range(n_split_grid):
+            # index one row of the split grid
+            src = slice(r * n_split_grid, (r + 1) * n_split_grid)
+            # map split-grid-row to full-grid-row
+            grid_row = 2 * r + row
+            # index one row of the full grid, skipping every other entry to interleave splits
+            out = slice(grid_row * n_full_grid + col, grid_row * n_full_grid + n_full_grid, 2)
+
+            ir_layout[out] = ir_vsrc[src]
+            src_layout[out] = src_vsrc[src]
+            c0_layout[out] = c0_vsrc[src]
+            temp_layout[out] = temp_vsrc[src]
+            if has_humidity:
+                hum_layout[out] = hum_vsrc[src]
+
+    with h5.File(output_path, "w") as out:
+        # create groups and virtual datasets
+        data_grp = out.create_group("data")
+        data_grp.create_virtual_dataset("impulse_response", ir_layout)
+        loc_grp = data_grp.create_group("location")
+        loc_grp.create_virtual_dataset("source", src_layout)
+        loc_grp.create_dataset("receiver", data=receiver)
+
+        meta_grp = out.create_group("metadata")
+        meta_grp.create_dataset("sampling_rate", data=sampling_rate)
+        meta_grp.create_virtual_dataset("c0", c0_layout)
+        meta_grp.create_virtual_dataset("temperature", temp_layout)
+        if has_humidity:
+            meta_grp.create_virtual_dataset("humidity", hum_layout)
+
+    return output_path
+
 
 def load_h5(file):
     """Load raw arrays from an HDF5 file into a dictionary.
@@ -286,20 +487,26 @@ def get_sriracha(
     )
 
     assert dataset_split in [None, "C1", "C2", "C3", "C4"], "dataset_split must be None or in [C1, C2, C3, C4]"
-
-    assert not (scenario[-1] != "D" and dataset_split is None), "full datasets need a split"
     assert not (scenario[-1] == "D" and dataset_split is not None), "dense datasets do not have splits"
-
-    if dataset_split is None:
-        scenario += ".h5"
-    else:
-        scenario += "-" + dataset_split + ".h5"
 
     path = Path(path) / "SRIRACHA" / "raw"
     doi = "10.14279/depositonce-23943"
-
     pup = pooch_from_doi(doi, path=path)
-    pup.fetch(scenario, progressbar=True)
+
+    # check if scenario is full-plane or dense and handle accordingly
+    is_full_plane = scenario[-1] != "D"
+
+    if is_full_plane and dataset_split is None:
+        download_and_merge(scenario, path, pup)
+        scenario += ".h5"
+    else:
+        if dataset_split is None:
+            scenario += ".h5"
+        else:
+            scenario += "-" + dataset_split + ".h5"
+
+        pup.fetch(scenario, progressbar=True)
+   
 
     @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
     def process_sriracha(file, process=True):
