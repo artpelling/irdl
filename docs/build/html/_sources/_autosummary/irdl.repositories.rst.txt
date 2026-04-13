@@ -1,4 +1,0 @@
-﻿``repositories``
-=================
-
-.. automodule:: irdl.repositories

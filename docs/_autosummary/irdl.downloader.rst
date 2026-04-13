@@ -1,4 +1,0 @@
-﻿``downloader``
-===============
-
-.. automodule:: irdl.downloader
