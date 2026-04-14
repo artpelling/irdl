@@ -3,24 +3,14 @@ API Reference
 
 .. currentmodule:: irdl
 
-Available Datasets
-------------------
-
-Room impulse responses
-^^^^^^^^^^^^^^^^^^^^^^
+Dataset modules
+---------------
 .. autosummary::
-  :caption: Room impulse responses
-  :toctree: _autosummary
+   :caption: Dataset modules
+   :toctree: _autosummary
 
-  miracle
-
-Head-related impulse responses
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-.. autosummary::
-  :caption: Head-related impulse responses
-  :toctree: _autosummary
-
-  fabian
+   ista
+   sofa
 
 Internal modules
 ----------------

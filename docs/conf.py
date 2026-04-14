@@ -22,7 +22,7 @@ html_theme = "pydata_sphinx_theme"
 html_theme_options = {
     "logo": {
         "alt_text": "irdl",
-        "text": "irdl",
+        "text": "irdl: Impulse Response Downloader",
     },
     "icon_links": [
         {
