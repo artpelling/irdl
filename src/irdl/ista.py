@@ -9,10 +9,10 @@ from pathlib import Path
 
 import h5py as h5
 import numpy as np
-import psutil
 import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+from irdl.utils import fits_in_memory
 
 
 def download_and_merge(scenario, path, pup):
@@ -212,27 +212,6 @@ def download_and_merge_vds(scenario, path, pup):
     return output_path
 
 
-def check_memory(file_path):
-    """Check if a file can be loaded into available RAM.
-
-    Needed for pyfar or numpy output formats, which load the entire dataset into memory.
-
-    Parameters
-    ----------
-    file_path : Path
-        Path to the HDF5 file.
-
-    Returns
-    -------
-    fits : bool
-        True if the file fits into available RAM with headroom.
-
-    """
-    file_size = file_path.stat().st_size
-    available = psutil.virtual_memory().available
-    return file_size < available * 0.9  # Headroom
-
-
 def load_h5(file):
     """Load raw arrays from an HDF5 file into a dictionary.
 
@@ -429,6 +408,7 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
     assert output_format in ["pyfar", "hdf5", "numpy"], "unknown output format"
     assert scenario in ["A1", "A2", "D1", "R2"], "scenario must be one of ['A1', 'A2', 'D1', 'R2']"
     assert dataset_split in [None, "C1", "C2", "C3", "C4"], "dataset_split must be None or in [C1, C2, C3, C4]"
+    assert not (scenario == "D1" and dataset_split is not None), "scenario D1 cannot be split"
 
     scenario += ".h5"
 
@@ -437,6 +417,10 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
 
     pup = pooch_from_doi(doi, path=path)
     pup.fetch(scenario, progressbar=True)
+
+    # check if the file can be loaded into memory if not, fall back to hdf5
+    if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
+        output_format = "hdf5"
 
     @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
     def process_miracle(file, process=True):
@@ -503,7 +487,6 @@ def get_sriracha(
     assert scenario in ["SR1", "SRA1", "SR1-D", "SRA1-D", "SR2", "SRA2", "SR2-D", "SRA2-D"], (
         "scenario must be one of [SR1, SRA1, SR1-D, SRA1-D, SR2, SRA2, SR2-D, SRA2-D]"
     )
-
     assert dataset_split in [None, "C1", "C2", "C3", "C4"], "dataset_split must be None or in [C1, C2, C3, C4]"
     assert not (scenario[-1] == "D" and dataset_split is not None), "dense datasets do not have splits"
 
@@ -511,7 +494,7 @@ def get_sriracha(
     doi = "10.14279/depositonce-23943"
     pup = pooch_from_doi(doi, path=path)
 
-    # check if scenario is full-plane or dense and handle accordingly
+    # check to determine download and merging strategy
     is_full_plane = scenario[-1] != "D"
 
     if is_full_plane and dataset_split is None:
@@ -525,15 +508,8 @@ def get_sriracha(
 
         pup.fetch(scenario, progressbar=True)
 
-    # check if the file can be loaded into memory for pyfar or numpy output formats.
-    # if not, fall back to returning the HDF5 file path
-    if output_format in ["pyfar", "numpy"] and not check_memory(path / scenario):
-        print(
-            f"Dataset too large for available memory "
-            f"({(path / scenario).stat().st_size / 1e9:.1f} GB needed, "
-            f"{psutil.virtual_memory().available / 1e9:.1f} GB available). "
-            f"Returning HDF5 file path instead."
-        )
+    # check if the file can be loaded into memory if not, fall back to hdf5
+    if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
         output_format = "hdf5"
 
     @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?

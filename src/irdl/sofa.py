@@ -9,6 +9,7 @@ import pooch as po
 import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+from irdl.utils import fits_in_memory
 
 
 def sofa_to_pyfar(file):
@@ -167,6 +168,11 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
                         zf.getinfo(name).filename = Path(name).name
                         logger.info(f"Extracting {name} to {file.parent / Path(name).name}")
                         zf.extract(name, path=file.parent)
+
+        # check if the file can be loaded into memory if not, fall back to hdf5
+        nonlocal output_format
+        if output_format in ["pyfar", "numpy"] and not fits_in_memory(file):
+            output_format = "hdf5"
 
         match output_format:
             case "pyfar":
