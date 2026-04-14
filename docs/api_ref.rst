@@ -20,3 +20,4 @@ Internal modules
 
   downloader
   repositories
+  utils
