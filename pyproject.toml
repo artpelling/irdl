@@ -38,12 +38,18 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = [
+docs = [
     "pydata-sphinx-theme>=0.16.1",
-    "ruff==0.14.14",
     "sphinx>=9.0.4",
     "sphinx-click>=6.2.0",
     "sphinx-copybutton>=0.5.2",
+]
+
+lint = ["ruff==0.14.14"]
+
+dev = [
+    {include-group = "docs"},
+    {include-group = "lint"},
 ]
 
 [project.scripts]
