@@ -13,7 +13,7 @@ import pooch as po
 import pyfar as pf
 
 from irdl.downloader import CACHE_DIR, _move_to_export_dir, _pooch_from_doi
-from irdl.utils import fits_in_memory
+from irdl.utils import _fits_in_memory
 
 
 # Not used
@@ -425,7 +425,7 @@ def get_miracle(
             _save_h5(_split_data(_load_h5(h5_file), dataset_split), split_file)
         h5_file = split_file
 
-    if output_format in ["pyfar", "numpy"] and not fits_in_memory(h5_file):
+    if output_format in ["pyfar", "numpy"] and not _fits_in_memory(h5_file):
         output_format = "hdf5"
 
     match output_format:
@@ -513,7 +513,7 @@ def get_sriracha(
     h5_file = path / scenario_file
 
     # check if the file can be loaded into memory if not, fall back to hdf5
-    if output_format in ["pyfar", "numpy"] and not fits_in_memory(h5_file):
+    if output_format in ["pyfar", "numpy"] and not _fits_in_memory(h5_file):
         output_format = "hdf5"
 
     match output_format:
