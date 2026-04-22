@@ -12,8 +12,8 @@ import numpy as np
 import pooch as po
 import pyfar as pf
 
-from irdl.downloader import CACHE_DIR, _move_to_export_dir, _pooch_from_doi
-from irdl.utils import _fits_in_memory
+from irdl.downloader import CACHE_DIR, _pooch_from_doi
+from irdl.utils import _fits_in_memory, _move_to_export_dir
 
 
 # Not used
