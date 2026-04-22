@@ -1,5 +1,6 @@
 """Implements download and post-processing based on pooch."""
 
+import shutil
 from pathlib import Path
 
 import pooch as po
@@ -10,7 +11,7 @@ from irdl.repositories import doi_to_repository
 CACHE_DIR = po.os_cache("irdl")
 
 
-def pooch_from_doi(doi, path=CACHE_DIR):
+def _pooch_from_doi(doi, path=CACHE_DIR):
     """Create a Pooch instance from a DOI.
 
     Parameters
@@ -34,24 +35,31 @@ def pooch_from_doi(doi, path=CACHE_DIR):
     return pup
 
 
-def process(func):
-    """Decorator to process downloaded files.
+def _move_to_export_dir(cached_path, export_dir):
+    """Move a file from the cache directory to a dedicated export directory.
 
-    The decorated function should take two arguments: the input file name and the output file name.
-    The decorator checks if the output file already exists and is up to date. If so, it returns the
-    output file name. Otherwise, it calls the decorated function to process the input file and
-    create the output file.
+    Parameters
+    ----------
+    cached_path : :class:`pathlib.Path`
+    Path to the file in the cache directory.
+    export_dir : :class:`str`, :class:`pathlib.Path`, or None
+    Directory to move the file to. If ``None`` or identical to the file's
+    parent directory, the file is not moved and ``cached_path`` is returned.
+
+    Returns
+    -------
+    path : :class:`pathlib.Path`
+    Path to the file, either in ``export_dir`` or unchanged if no move was needed.
+
     """
-
-    def check_process(fname, action, pup=None):
-        logger = po.get_logger()
-        fname = Path(fname)
-        if fname.exists() and action == "fetch":
-            logger.info(f"The file '{fname}' exists is up to date.")
-            return func(fname, process=False)
-        else:
-            logger.info(f"Processing and writing to '{fname}'.")
-            fname.parent.mkdir(parents=True, exist_ok=True)
-            return func(fname, process=True)
-
-    return check_process
+    # no export_dir specified
+    if export_dir is None or Path(export_dir) == cached_path.parent:
+        return cached_path
+    dest = Path(export_dir) / cached_path.name
+    # file exists already in export_dir
+    if dest.exists():
+        return dest
+    # move file from cache to export_dir
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(cached_path, dest)
+    return dest
