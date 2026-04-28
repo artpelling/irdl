@@ -49,7 +49,7 @@ from urllib3.util.retry import Retry
 DEFAULT_TIMEOUT = (60, 30)  # (connect_timeout_s, read_timeout_s)
 
 MAX_RETRIES = 5
-BACKOFF_FACTOR = 0.5  # exponential backoff: waits 0.5, 1, 2, 4, 8 s between retries
+BACKOFF_FACTOR = 2.0  # exponential backoff: waits 2, 4, 8, 16, 32 s between retries
 
 
 def _make_session():
