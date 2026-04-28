@@ -8,7 +8,7 @@ import numpy as np
 import pooch as po
 import pyfar as pf
 
-from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+from irdl.downloader import CACHE_DIR, fetch, pooch_from_doi, process
 from irdl.utils import fits_in_memory
 
 
@@ -153,7 +153,7 @@ def get_fabian(kind: str = "measured", hato: int = 0, path: str = CACHE_DIR, out
     zipfile = "FABIAN_HRTF_DATABASE_v4.zip"
 
     pup = pooch_from_doi(doi, path=path)
-    pup.fetch(zipfile, progressbar=True)
+    fetch(pup, zipfile)
 
     logger = po.get_logger()
 

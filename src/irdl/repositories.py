@@ -125,6 +125,7 @@ class DSpaceRepository(DataRepository):
                 bs["name"]: {
                     "url": bs["_links"]["content"]["href"],
                     "checksum": f"{bs['checkSum']['checkSumAlgorithm']}:{bs['checkSum']['value']}",
+                    "size": bs.get("sizeBytes"),
                 }
                 for bs in bitstreams
             }
@@ -146,6 +147,22 @@ class DSpaceRepository(DataRepository):
 
         """
         return self.api_response[file_name]["url"]
+
+    def file_size(self, file_name):
+        """Return the size of a file in bytes, or ``None`` if unavailable.
+
+        Parameters
+        ----------
+        file_name : :class:`str`
+            The name of the file in the archive.
+
+        Returns
+        -------
+        size : :class:`int` or None
+            The file size in bytes.
+
+        """
+        return self.api_response[file_name].get("size")
 
     def populate_registry(self, pooch):
         """Populate the registry using the data repository's API.

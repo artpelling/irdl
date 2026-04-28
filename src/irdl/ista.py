@@ -11,7 +11,7 @@ import h5py as h5
 import numpy as np
 import pyfar as pf
 
-from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+from irdl.downloader import CACHE_DIR, fetch, pooch_from_doi, process
 from irdl.utils import fits_in_memory
 
 
@@ -47,7 +47,7 @@ def download_and_merge(scenario, path, pup):
     split_files = {}
     for split in offsets:
         fname = f"{scenario}-{split}.h5"
-        pup.fetch(fname, progressbar=True)
+        fetch(pup, fname)
         split_files[split] = path / fname
 
     # read shapes and shared metadata from the first split
@@ -144,7 +144,7 @@ def download_and_merge_vds(scenario, path, pup):
     split_files = {}
     for split in offsets:
         fname = f"{scenario}-{split}.h5"
-        pup.fetch(fname, progressbar=True)
+        fetch(pup, fname)
         split_files[split] = fname  # filename only — keeps VDS relocatable
 
     # read shapes and shared metadata from the first split
@@ -416,7 +416,7 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
     doi = "10.14279/depositonce-20837"
 
     pup = pooch_from_doi(doi, path=path)
-    pup.fetch(scenario, progressbar=True)
+    fetch(pup, scenario)
 
     # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
@@ -506,7 +506,7 @@ def get_sriracha(
         else:
             scenario += "-" + dataset_split + ".h5"
 
-        pup.fetch(scenario, progressbar=True)
+        fetch(pup, scenario)
 
     # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
