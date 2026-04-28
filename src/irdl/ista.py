@@ -11,7 +11,7 @@ import h5py as h5
 import numpy as np
 import pyfar as pf
 
-from irdl.downloader import CACHE_DIR, fetch, pooch_from_doi, process
+from irdl.downloader import CACHE_DIR, fetch, pooch_from_doi
 from irdl.utils import fits_in_memory
 
 
@@ -418,28 +418,23 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
     pup = pooch_from_doi(doi, path=path)
     fetch(pup, scenario)
 
-    # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
         output_format = "hdf5"
 
-    @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
-    def process_miracle(file, process=True):
-        match output_format:
-            case "hdf5":
-                if dataset_split is None:
-                    return file
-                else:
-                    h5_path = file.with_stem(file.stem + f"-{dataset_split}")
-                    return save_h5(split_data(load_h5(file), dataset_split), h5_path)
-            case "pyfar":
-                return h5_to_pyfar(file, dataset_split=dataset_split)
-            case "numpy":
-                if dataset_split is None:
-                    return load_h5(file)
-                else:
-                    return split_data(load_h5(file), dataset_split)
-
-    return process_miracle(path / scenario, action="fetch", pup=pup)
+    match output_format:
+        case "hdf5":
+            if dataset_split is None:
+                return path / scenario
+            else:
+                h5_path = (path / scenario).with_stem(Path(scenario).stem + f"-{dataset_split}")
+                return save_h5(split_data(load_h5(path / scenario), dataset_split), h5_path)
+        case "pyfar":
+            return h5_to_pyfar(path / scenario, dataset_split=dataset_split)
+        case "numpy":
+            if dataset_split is None:
+                return load_h5(path / scenario)
+            else:
+                return split_data(load_h5(path / scenario), dataset_split)
 
 
 def get_sriracha(
@@ -508,18 +503,13 @@ def get_sriracha(
 
         fetch(pup, scenario)
 
-    # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
         output_format = "hdf5"
 
-    @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
-    def process_sriracha(file, process=True):
-        match output_format:
-            case "hdf5":
-                return file
-            case "pyfar":
-                return h5_to_pyfar(file)
-            case "numpy":
-                return load_h5(file)
-
-    return process_sriracha(path / scenario, action="fetch", pup=pup)
+    match output_format:
+        case "hdf5":
+            return path / scenario
+        case "pyfar":
+            return h5_to_pyfar(path / scenario)
+        case "numpy":
+            return load_h5(path / scenario)
