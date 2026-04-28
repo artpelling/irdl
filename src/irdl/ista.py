@@ -389,7 +389,6 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
         Output format of the returned data.
         Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
 
-
     Returns
     -------
     data : :class:`dict` or :class:`pathlib.Path`
@@ -452,7 +451,7 @@ def get_sriracha(
     dataset_split : :class:`str` or None
         Optional dataset split for full-plane scenarios.
         One of ``'C1'``, ``'C2'``, ``'C3'``, ``'C4'``, or ``None`` (default).
-        Dense scenarios (ending in ``-D``)do not have splits.
+        Dense scenarios (ending in ``-D``) do not have splits.
     path : :class:`str` or :class:`pathlib.Path`
         Path to the directory where the data should be stored. Will be overwritten, if the
         environment variable `IRDL_DATA_DIR` is set. Default is the user cache directory.
@@ -467,7 +466,7 @@ def get_sriracha(
 
         - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`),
-          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`), and
+          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`)
         - ``'hdf5'``: :class:`pathlib.Path` to the HDF5 file containing the data.
         - ``'numpy'``: :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
           ``'source_coordinates'`` (:class:`numpy.ndarray`),
