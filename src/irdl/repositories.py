@@ -31,6 +31,7 @@
 
 from time import sleep
 
+import requests
 from pooch import get_logger
 from pooch.downloaders import (
     DataRepository,
@@ -40,9 +41,31 @@ from pooch.downloaders import (
     doi_to_url,
 )
 from pooch.utils import parse_url
-from requests.exceptions import ConnectionError
+from requests.adapters import HTTPAdapter
+from requests.exceptions import ConnectionError, Timeout
+from urllib3.util.retry import Retry
 
-DEFAULT_TIMEOUT = 30  # seconds
+# Separate connect vs. read timeout: DepositOnce can be slow to accept connections.
+DEFAULT_TIMEOUT = (60, 30)  # (connect_timeout_s, read_timeout_s)
+
+MAX_RETRIES = 5
+BACKOFF_FACTOR = 2.0  # exponential backoff: waits 2, 4, 8, 16, 32 s between retries
+
+
+def _make_session():
+    """Create a requests Session with automatic retry and exponential backoff."""
+    session = requests.Session()
+    retry = Retry(
+        total=MAX_RETRIES,
+        connect=MAX_RETRIES,
+        read=3,
+        backoff_factor=BACKOFF_FACTOR,
+        status_forcelist=[408, 429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
 
 
 class DSpaceRepository(DataRepository):
@@ -78,25 +101,31 @@ class DSpaceRepository(DataRepository):
     @property
     def api_response(self):
         if self._api_response is None:
-            # Lazy import requests to speed up import time
-            import requests  # pylint: disable=C0415
-
             article_id = self.archive_url.split("/")[-1]
-            bundles = requests.get(
-                f"https://api-depositonce.tu-berlin.de/server/api/core/items/{article_id}/bundles",
-                timeout=DEFAULT_TIMEOUT,
-            ).json()["_embedded"]["bundles"]
-            for b in bundles:
-                if b["name"] == "ORIGINAL":
-                    break
-            bitstreams = requests.get(
-                b["_links"]["bitstreams"]["href"],
-                timeout=DEFAULT_TIMEOUT,
-            ).json()["_embedded"]["bitstreams"]
+            with _make_session() as session:
+                response = session.get(
+                    f"https://api-depositonce.tu-berlin.de/server/api/core/items/{article_id}/bundles",
+                    timeout=DEFAULT_TIMEOUT,
+                )
+                response.raise_for_status()
+                bundles = response.json()["_embedded"]["bundles"]
+
+                original = next((b for b in bundles if b["name"] == "ORIGINAL"), None)
+                if original is None:
+                    raise ValueError(f"No 'ORIGINAL' bundle found for item {article_id}.")
+
+                response = session.get(
+                    original["_links"]["bitstreams"]["href"],
+                    timeout=DEFAULT_TIMEOUT,
+                )
+                response.raise_for_status()
+                bitstreams = response.json()["_embedded"]["bitstreams"]
+
             self._api_response = {
                 bs["name"]: {
                     "url": bs["_links"]["content"]["href"],
                     "checksum": f"{bs['checkSum']['checkSumAlgorithm']}:{bs['checkSum']['value']}",
+                    "size": bs.get("sizeBytes"),
                 }
                 for bs in bitstreams
             }
@@ -118,6 +147,22 @@ class DSpaceRepository(DataRepository):
 
         """
         return self.api_response[file_name]["url"]
+
+    def file_size(self, file_name):
+        """Return the size of a file in bytes, or ``None`` if unavailable.
+
+        Parameters
+        ----------
+        file_name : :class:`str`
+            The name of the file in the archive.
+
+        Returns
+        -------
+        size : :class:`int` or None
+            The file size in bytes.
+
+        """
+        return self.api_response[file_name].get("size")
 
     def populate_registry(self, pooch):
         """Populate the registry using the data repository's API.
@@ -163,16 +208,19 @@ def doi_to_repository(doi):
     ]
 
     # Extract the DOI and the repository information
-    i = 0
+    logger = get_logger()
     archive_url = None
-    while i < 10:
+    for attempt in range(MAX_RETRIES):
         try:
-            archive_url = doi_to_url(doi)
+            archive_url = doi_to_url(doi, timeout=DEFAULT_TIMEOUT)
             break
-        except ConnectionError as e:
-            get_logger().warning(f"Connection error: {str(e)}. Retrying ({i}/10)")
-        i += 1
-        sleep(0.5)
+        except (ConnectionError, Timeout) as e:
+            wait = BACKOFF_FACTOR * (2 ** attempt)
+            if attempt == 0:
+                logger.warning("Server is slow to respond, retrying with exponential backoff...")
+            logger.debug(f"  Attempt {attempt + 1}/{MAX_RETRIES} failed ({type(e).__name__}), waiting {wait:.0f}s")
+            if attempt < MAX_RETRIES - 1:
+                sleep(wait)
 
     if archive_url is None:
         raise ConnectionError(f"Could not resolve DOI {doi} to a URL. Check the DOI or try running the script again.")

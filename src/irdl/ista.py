@@ -11,7 +11,7 @@ import h5py as h5
 import numpy as np
 import pyfar as pf
 
-from irdl.downloader import CACHE_DIR, pooch_from_doi, process
+from irdl.downloader import CACHE_DIR, fetch, pooch_from_doi
 from irdl.utils import fits_in_memory
 
 
@@ -47,7 +47,7 @@ def download_and_merge(scenario, path, pup):
     split_files = {}
     for split in offsets:
         fname = f"{scenario}-{split}.h5"
-        pup.fetch(fname, progressbar=True)
+        fetch(pup, fname)
         split_files[split] = path / fname
 
     # read shapes and shared metadata from the first split
@@ -144,7 +144,7 @@ def download_and_merge_vds(scenario, path, pup):
     split_files = {}
     for split in offsets:
         fname = f"{scenario}-{split}.h5"
-        pup.fetch(fname, progressbar=True)
+        fetch(pup, fname)
         split_files[split] = fname  # filename only — keeps VDS relocatable
 
     # read shapes and shared metadata from the first split
@@ -389,7 +389,6 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
         Output format of the returned data.
         Either ``'pyfar'`` (default), ``'hdf5'``, or ``'numpy'``.
 
-
     Returns
     -------
     data : :class:`dict` or :class:`pathlib.Path`
@@ -416,30 +415,25 @@ def get_miracle(scenario: str = "A1", dataset_split: str = None, path: str = CAC
     doi = "10.14279/depositonce-20837"
 
     pup = pooch_from_doi(doi, path=path)
-    pup.fetch(scenario, progressbar=True)
+    fetch(pup, scenario)
 
-    # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
         output_format = "hdf5"
 
-    @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
-    def process_miracle(file, process=True):
-        match output_format:
-            case "hdf5":
-                if dataset_split is None:
-                    return file
-                else:
-                    h5_path = file.with_stem(file.stem + f"-{dataset_split}")
-                    return save_h5(split_data(load_h5(file), dataset_split), h5_path)
-            case "pyfar":
-                return h5_to_pyfar(file, dataset_split=dataset_split)
-            case "numpy":
-                if dataset_split is None:
-                    return load_h5(file)
-                else:
-                    return split_data(load_h5(file), dataset_split)
-
-    return process_miracle(path / scenario, action="fetch", pup=pup)
+    match output_format:
+        case "hdf5":
+            if dataset_split is None:
+                return path / scenario
+            else:
+                h5_path = (path / scenario).with_stem(Path(scenario).stem + f"-{dataset_split}")
+                return save_h5(split_data(load_h5(path / scenario), dataset_split), h5_path)
+        case "pyfar":
+            return h5_to_pyfar(path / scenario, dataset_split=dataset_split)
+        case "numpy":
+            if dataset_split is None:
+                return load_h5(path / scenario)
+            else:
+                return split_data(load_h5(path / scenario), dataset_split)
 
 
 def get_sriracha(
@@ -457,7 +451,7 @@ def get_sriracha(
     dataset_split : :class:`str` or None
         Optional dataset split for full-plane scenarios.
         One of ``'C1'``, ``'C2'``, ``'C3'``, ``'C4'``, or ``None`` (default).
-        Dense scenarios (ending in ``-D``)do not have splits.
+        Dense scenarios (ending in ``-D``) do not have splits.
     path : :class:`str` or :class:`pathlib.Path`
         Path to the directory where the data should be stored. Will be overwritten, if the
         environment variable `IRDL_DATA_DIR` is set. Default is the user cache directory.
@@ -472,7 +466,7 @@ def get_sriracha(
 
         - ``'pyfar'``: :class:`dict` with keys ``'impulse_response'`` (:class:`pyfar.Signal`),
           ``'source_coordinates'`` (:class:`pyfar.Coordinates`),
-          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`), and
+          ``'receiver_coordinates'`` (:class:`pyfar.Coordinates`)
         - ``'hdf5'``: :class:`pathlib.Path` to the HDF5 file containing the data.
         - ``'numpy'``: :class:`dict` with keys ``'impulse_response'`` (:class:`numpy.ndarray`),
           ``'source_coordinates'`` (:class:`numpy.ndarray`),
@@ -506,20 +500,15 @@ def get_sriracha(
         else:
             scenario += "-" + dataset_split + ".h5"
 
-        pup.fetch(scenario, progressbar=True)
+        fetch(pup, scenario)
 
-    # check if the file can be loaded into memory if not, fall back to hdf5
     if output_format in ["pyfar", "numpy"] and not fits_in_memory(path / scenario):
         output_format = "hdf5"
 
-    @process  # is always true because we dont extract and pup.fetch checks if file exists already => remove?
-    def process_sriracha(file, process=True):
-        match output_format:
-            case "hdf5":
-                return file
-            case "pyfar":
-                return h5_to_pyfar(file)
-            case "numpy":
-                return load_h5(file)
-
-    return process_sriracha(path / scenario, action="fetch", pup=pup)
+    match output_format:
+        case "hdf5":
+            return path / scenario
+        case "pyfar":
+            return h5_to_pyfar(path / scenario)
+        case "numpy":
+            return load_h5(path / scenario)

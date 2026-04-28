@@ -32,7 +32,7 @@ dependencies = [
     "numpydoc>=1.10.0",
     "pooch>=1.8.2",
     "pyfar>=0.7.3",
-    "tqdm>=4.67.1",
+    "rich>=13.0.0",
     "typer>=0.17.4",
     "psutil>=7.0.0",
 ]
