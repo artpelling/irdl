@@ -1,7 +1,4 @@
-"""Logging configuration for IRDL.
-
-This module provides centralized logging setup for the irdl package using Rich.
-"""
+"""Logging configuration for IRDL."""
 
 import io
 import logging
@@ -17,29 +14,53 @@ from rich.progress import (
     TimeRemainingColumn,
     TransferSpeedColumn,
 )
+from rich.text import Text
 
-# Create a Rich console for logging
 console = Console()
 
-# Single logger for the entire irdl module
-logger = logging.getLogger("irdl")
+_LOGGER_STYLES = {
+    "IRDL": "bold blue",
+    "POOCH": "bold yellow",
+    "SOFAR": "bold red",
+}
+_DEFAULT_SOURCE_STYLE = "bold white"
+_LEVEL_WIDTH = 8
 
-# Configure Rich handler for the logger
-rich_handler = RichHandler(
+
+def _source_width() -> int:
+    """Return the current source-column width."""
+    return max(len(name) for name in _LOGGER_STYLES | {"DEFAULT": _DEFAULT_SOURCE_STYLE})
+
+
+def _log_message_indent() -> str:
+    """Return the left padding needed to align with log message text."""
+    return " " * (_LEVEL_WIDTH + _source_width() + 1)
+
+
+class IrdlRichHandler(RichHandler):
+    """Rich handler with a colorized source prefix."""
+
+    def render_message(self, record: logging.LogRecord, message: str) -> Text:
+        """Render one log message with a styled source name."""
+        rendered = super().render_message(record, message)
+        style = _LOGGER_STYLES.get(record.name, _DEFAULT_SOURCE_STYLE)
+        source = f"{record.name:<{_source_width()}}"
+        return Text.assemble((source, style), " ", rendered)
+
+
+_rich_handler = IrdlRichHandler(
     console=console,
     show_time=False,
+    show_level=True,
     show_path=False,
 )
-rich_handler.setFormatter(logging.Formatter("%(message)s"))
-logger.addHandler(rich_handler)
-logger.addHandler(logging.NullHandler())
-logger.setLevel(logging.INFO)
+_rich_handler.setFormatter(logging.Formatter("%(message)s"))
 
 
 class StdoutCapture:
-    """Context manager to capture stdout and log it."""
+    """Context manager to capture stdout and forward it to a logger."""
 
-    def __init__(self, logger_instance: logging.Logger = logger):
+    def __init__(self, logger_instance: logging.Logger):
         self.logger = logger_instance
 
     def __enter__(self) -> io.StringIO:
@@ -52,37 +73,48 @@ class StdoutCapture:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         """Exit the context manager and restore stdout."""
         sys.stdout = self.old_stdout
-        output = self.capture_buffer.getvalue()
+        output = self.capture_buffer.getvalue().strip()
         if output:
-            self.logger.info(output.strip())
+            for line in output.splitlines():
+                self.logger.info(line)
 
 
-# Create the context manager instance
-as_stdout = StdoutCapture()
+def get_logger(source: str, style: str | None = None) -> logging.Logger:
+    """Return a configured logger for one visible log source."""
+    source = source.upper()
+    if style is not None:
+        _LOGGER_STYLES[source] = style
+    named_logger = logging.getLogger(source)
+    if not any(handler is _rich_handler for handler in named_logger.handlers):
+        named_logger.handlers.clear()
+        named_logger.addHandler(_rich_handler)
+    named_logger.propagate = False
+    named_logger.setLevel(logging.INFO)
+    named_logger.as_stdout = StdoutCapture(named_logger)
+    return named_logger
 
-# Attach to logger for convenient access
-logger.as_stdout = as_stdout
+
+logger = get_logger("IRDL")
+pooch_logger = get_logger("POOCH")
+sofar_logger = get_logger("SOFAR")
 
 
 def configure_cli_logging() -> logging.Logger:
     """Configure logging for CLI usage with Rich handler."""
-    # Logger is already configured with RichHandler above
-    # Just ensure it has the right level
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
+    pooch_logger.setLevel(logging.DEBUG)
+    sofar_logger.setLevel(logging.DEBUG)
     return logger
 
 
-# Make pooch use irdl's logger
 try:
     import pooch as po
 
-    pooch_logger = po.get_logger()
+    upstream_pooch_logger = po.get_logger()
 
-    # Remove pooch's existing handlers
-    for handler in pooch_logger.handlers[:]:
-        pooch_logger.removeHandler(handler)
+    for handler in upstream_pooch_logger.handlers[:]:
+        upstream_pooch_logger.removeHandler(handler)
 
-    # Add a handler that forwards to irdl's logger
     class LoggerForwarder(logging.Handler):
         """Forward log records to a target logger."""
 
@@ -92,15 +124,21 @@ try:
 
         def emit(self, record: logging.LogRecord) -> None:
             """Forward log records to the target logger."""
-            # Re-emit the record with the target logger's name
-            record.name = self.target_logger.name
-            self.target_logger.handle(record)
+            forwarded = logging.LogRecord(
+                name=self.target_logger.name,
+                level=record.levelno,
+                pathname=record.pathname,
+                lineno=record.lineno,
+                msg=record.getMessage(),
+                args=(),
+                exc_info=record.exc_info,
+            )
+            self.target_logger.handle(forwarded)
 
-    pooch_logger.addHandler(LoggerForwarder(logger))
-    pooch_logger.propagate = False  # Don't propagate to root
-    pooch_logger.setLevel(logging.DEBUG)
+    upstream_pooch_logger.addHandler(LoggerForwarder(pooch_logger))
+    upstream_pooch_logger.propagate = False
+    upstream_pooch_logger.setLevel(logging.DEBUG)
 except ImportError:
-    # pooch might not be available yet
     pass
 
 
@@ -112,9 +150,11 @@ class RichProgressBar:
     """
 
     def __init__(self, description: str, preset_total: int = 0):
+        source = f"{'IRDL':<{_source_width()}}"
+        irld_style = _LOGGER_STYLES["IRDL"]
         self._progress = Progress(
-            TextColumn("[progress.description]{task.description}"),
-            BarColumn(),
+            TextColumn(f" {' ' * _LEVEL_WIDTH}[{irld_style}]{source}[/] [progress.description]{{task.description}}"),
+            BarColumn(complete_style=irld_style, finished_style=irld_style),
             DownloadColumn(),
             TransferSpeedColumn(),
             TimeRemainingColumn(),
@@ -122,26 +162,16 @@ class RichProgressBar:
         )
         self._description = description
         self._task_id = None
-        # Pooch sets self.total from the HTTP Content-Length header. If the server omits
-        # that header, pooch sets it to 0. In that case, fall back to the preset value
-        # from the repository API so the bar can show real progress.
         self._preset_total = preset_total
         self.total = 0
 
     @property
     def total(self) -> int:
-        """Total download size in bytes.
-
-        Returns
-        -------
-        int
-            Total download size in bytes.
-        """
+        """Total download size in bytes."""
         return self._total
 
     @total.setter
     def total(self, value: int) -> None:
-        # Use the API-supplied size when the server omits Content-Length (value == 0).
         self._total = value or self._preset_total
         if self._task_id is not None:
             self._progress.update(self._task_id, total=self._total or None)
@@ -154,10 +184,7 @@ class RichProgressBar:
         self._progress.advance(self._task_id, n)
 
     def reset(self) -> None:
-        """Reset the completed byte count to zero.
-
-        Called by pooch before the final fill.
-        """
+        """Reset the completed byte count to zero."""
         if self._task_id is not None:
             self._progress.reset(self._task_id, total=self.total or None)
 

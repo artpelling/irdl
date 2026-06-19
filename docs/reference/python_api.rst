@@ -15,7 +15,7 @@ Dataset modules
    akt
    base
    ista
-   sofa
+   sonicom
 
 Internal modules
 ----------------

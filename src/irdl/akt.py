@@ -10,13 +10,31 @@ from zipfile import ZipFile
 
 from irdl.base import DatasetCategory, SofaBaseDataset
 from irdl.downloader import _fetch, _pooch_from_doi
-from irdl.logging import logger
+from irdl.sonicom import SonicomBaseDataset
 
 
 class AKTZipBaseDataset(SofaBaseDataset):
-    """Base class for zipped datasets of the Audio Communications Group of TU Berlin."""
+    """Base class for zipped datasets of the Audio Communications Group of TU Berlin.
 
+    These datasets share one canonical Provider (DepositOnce), publish ZIP
+    archives as Provider artifacts, and extract one SOFA file into the ingest
+    stage before conversion.
+    """
+
+    canonical_provider = "depositonce"
+    providers = ("depositonce",)
     _zipfile: str
+
+    def _provider_artifact_format(self, provider: str, **_dataset_kwargs) -> str:
+        """Return the Provider-side artifact format for AKT ZIP datasets.
+
+        All current AKT datasets serve ZIP archives from their canonical
+        Provider.
+        """
+        if provider != self.canonical_provider:
+            msg = f"Unknown provider {provider!r} for {self.name.upper()}"
+            raise ValueError(msg)
+        return "zip"
 
     def _process(self, provider_artifact: Path, ingest_path: Path, **_dataset_kwargs) -> Path:
         """Extract the requested SOFA file from the ZIP into the ingest directory.
@@ -38,9 +56,8 @@ class AKTZipBaseDataset(SofaBaseDataset):
         with ZipFile(provider_artifact, "r") as zf:
             for name in zf.namelist():
                 if name.endswith(ingest_path.name):
-                    # Flatten the extraction (strip any nested ZIP directory)
                     zf.getinfo(name).filename = Path(name).name
-                    logger.info(f"Extracting {name} to {ingest_path.parent}")
+                    self.logger.info("Extracting provider artifact %s -> %s", name, ingest_path)
                     zf.extract(name, path=ingest_path.parent)
                     return ingest_path
 
@@ -50,30 +67,34 @@ class AKTZipBaseDataset(SofaBaseDataset):
             )
             raise FileNotFoundError(msg)
 
-    def _download(self, provider_dir: Path, **_dataset_kwargs) -> Path:
-        """Download BRAS-RS8 Scene_descriptions.zip archive to the provider directory.
+    def _download(self, provider_dir: Path, provider: str, **_dataset_kwargs) -> Path:
+        """Download the dataset ZIP archive to the Provider directory.
 
-        Only downloads the archive if it is not already cached in the provider
-        directory. Returns the ZIP path so that ``_process`` can extract the
-        requested SOFA file into the ingest directory.
+        Only the canonical Provider is currently supported. The downloaded ZIP
+        stays in the ``provider`` Cache Stage so ``_process`` can extract the
+        requested SOFA file into ``ingest``.
 
         Parameters
         ----------
         provider_dir : Path
-            Provider directory (e.g., ``cache/BRAS-RS8/provider/``).
-        **_dataset_kwargs : dict
-            Unused dataset-specific parameters (accepted for compatibility).
+            Provider directory (for example ``cache/FABIAN/provider/depositonce``).
+        provider : str
+            Provider name. Must be ``"depositonce"`` for current AKT datasets.
 
         Returns
         -------
         Path
             Path to the downloaded ZIP archive.
         """
+        if provider != self.canonical_provider:
+            msg = f"Unknown provider {provider!r} for {self.name.upper()}"
+            raise ValueError(msg)
+
         zip_path = provider_dir / self._zipfile
         if zip_path.exists():
-            logger.info(f"ZIP archive already cached at {zip_path}, skipping download")
+            self.logger.info("Provider cache hit: %s", zip_path)
         else:
-            logger.info(f"Downloading {self.name.upper()} dataset")
+            self.logger.info("provider=%r artifact=%r -> download to provider cache", provider, self._zipfile)
             pup = _pooch_from_doi(self.doi, path=provider_dir)
             _fetch(pup, self._zipfile)
         return zip_path
@@ -108,6 +129,7 @@ class BrasRs8Dataset(AKTZipBaseDataset):
         cache_dir: Path | str | None = None,
         export_dir: Path | str | None = None,
         output_format: str = "pyfar",
+        provider: str = "auto",
     ) -> dict | Path | None:
         """
         scene : str, optional
@@ -127,6 +149,7 @@ class BrasRs8Dataset(AKTZipBaseDataset):
             cache_dir=cache_dir,
             export_dir=export_dir,
             output_format=output_format,
+            provider=provider,
         )
 
     def _validate_params(self, **dataset_kwargs) -> None:
@@ -135,12 +158,15 @@ class BrasRs8Dataset(AKTZipBaseDataset):
         Parameters
         ----------
         **dataset_kwargs : dict
-            Must contain 'scene' (one of the valid scene identifiers).
+            Must contain ``scene`` as one of the valid BRAS-RS8 scene
+            identifiers. ``provider`` and ``output_format`` may also be passed
+            through the shared pipeline but do not add further restrictions
+            here.
 
         Raises
         ------
         ValueError
-            If scene is not one of the valid scene identifiers.
+            If ``scene`` is invalid.
         """
         scene = dataset_kwargs["scene"]
         valid_scenes = {
@@ -159,17 +185,17 @@ class BrasRs8Dataset(AKTZipBaseDataset):
             raise ValueError(msg)
 
     def _source_filename(self, **dataset_kwargs) -> str:
-        """Construct the ingest-ready (SOFA) filename.
+        """Construct the ingest-ready SOFA filename for BRAS-RS8.
 
         Parameters
         ----------
         **dataset_kwargs : dict
-            Expected key: scene.
+            Expected key: ``scene``.
 
         Returns
         -------
         str
-            File name in format "RS8_{scene}.sofa".
+            File name in format ``RS8_RIRs_{scene}.sofa``.
         """
         scene = dataset_kwargs["scene"]
         return f"RS8_RIRs_{scene}.sofa"
@@ -199,6 +225,7 @@ class FabianDataset(AKTZipBaseDataset):
         cache_dir: str | Path | None = None,
         export_dir: str | Path | None = None,
         output_format: str = "pyfar",
+        provider: str = "auto",
     ) -> dict | Path | None:
         """
         kind : str, optional
@@ -219,6 +246,7 @@ class FabianDataset(AKTZipBaseDataset):
             cache_dir=cache_dir,
             export_dir=export_dir,
             output_format=output_format,
+            provider=provider,
         )
 
     def _validate_params(self, **dataset_kwargs) -> None:
@@ -227,12 +255,12 @@ class FabianDataset(AKTZipBaseDataset):
         Parameters
         ----------
         **dataset_kwargs : dict
-            Parameters to validate. Expected keys: kind, hato.
+            Parameters to validate. Expected keys: ``kind`` and ``hato``.
 
         Raises
         ------
         ValueError
-            If kind or hato is out of range.
+            If ``kind`` or ``hato`` is out of range.
         """
         kind = dataset_kwargs["kind"]
         hato = dataset_kwargs["hato"]
@@ -245,28 +273,35 @@ class FabianDataset(AKTZipBaseDataset):
             raise ValueError(msg)
 
     def _source_filename(self, **dataset_kwargs) -> str:
-        """Construct the ingest-ready (SOFA) filename.
+        """Construct the ingest-ready SOFA filename for FABIAN.
 
         Parameters
         ----------
         **dataset_kwargs : dict
-            Expected keys: kind, hato.
+            Expected keys: ``kind`` and ``hato``.
 
         Returns
         -------
         str
-            File name in format "FABIAN_HRIR_{kind}_HATO_{hato}.sofa".
+            File name in format ``FABIAN_HRIR_{kind}_HATO_{hato}.sofa``.
         """
         return f"FABIAN_HRIR_{dataset_kwargs['kind']}_HATO_{dataset_kwargs['hato']}.sofa"
 
 
-class HutubsDataset(AKTZipBaseDataset):
-    """Download the HUTUBS HRTF database from DepositOnce."""
+class HutubsDataset(AKTZipBaseDataset, SonicomBaseDataset):
+    """Download the HUTUBS HRTF database from DepositOnce or SONICOM.
+
+    DepositOnce remains the canonical Provider and publishes a ZIP archive.
+    SONICOM mirrors individual SOFA files and is preferred for non-raw output
+    formats because it avoids the ZIP extraction path.
+    """
 
     name = "hutubs"
     doi = "10.14279/depositonce-8487"
+    providers = ("sonicom", "depositonce")
     _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
     _zipfile = "HRIRs.zip"
+    _sonicom_database_id = 76
 
     @classmethod
     def get(
@@ -276,6 +311,7 @@ class HutubsDataset(AKTZipBaseDataset):
         cache_dir: str | Path | None = None,
         export_dir: str | Path | None = None,
         output_format: str = "pyfar",
+        provider: str = "auto",
     ) -> dict | Path | None:
         """
         subject : int, optional
@@ -295,10 +331,46 @@ class HutubsDataset(AKTZipBaseDataset):
             cache_dir=cache_dir,
             export_dir=export_dir,
             output_format=output_format,
+            provider=provider,
         )
 
+    def _provider_artifact_format(self, provider: str, **_dataset_kwargs) -> str:
+        """Return the Provider-side artifact format for HUTUBS.
+
+        ``depositonce`` publishes a ZIP Provider artifact, while ``sonicom``
+        serves SOFA files directly.
+        """
+        if provider == "sonicom":
+            return "sofa"
+        return AKTZipBaseDataset._provider_artifact_format(self, provider, **_dataset_kwargs)
+
+    def _download(self, provider_dir: Path, provider: str, **dataset_kwargs) -> Path:
+        """Download HUTUBS data from the selected Provider.
+
+        The canonical Provider delegates to the shared AKT ZIP workflow.
+        ``sonicom`` delegates to :class:`~irdl.sonicom.SonicomBaseDataset`,
+        which resolves the mirrored file from the SONICOM database manifest and
+        verifies it against the packaged SONICOM hash registry.
+        """
+        if provider == "sonicom":
+            return SonicomBaseDataset._download(self, provider_dir, provider=provider, **dataset_kwargs)
+        return AKTZipBaseDataset._download(self, provider_dir, provider=provider, **dataset_kwargs)
+
     def _validate_params(self, **dataset_kwargs) -> None:
-        """Validate HUTUBS-specific parameters."""
+        """Validate HUTUBS-specific parameters.
+
+        Parameters
+        ----------
+        **dataset_kwargs : dict
+            Parameters to validate. Expected keys: ``subject`` and ``kind``.
+
+        Raises
+        ------
+        TypeError
+            If ``subject`` is not an integer.
+        ValueError
+            If ``subject`` or ``kind`` is out of range.
+        """
         subject = dataset_kwargs["subject"]
         kind = dataset_kwargs["kind"]
 
@@ -313,5 +385,11 @@ class HutubsDataset(AKTZipBaseDataset):
             raise ValueError(msg)
 
     def _source_filename(self, **dataset_kwargs) -> str:
-        """Construct the ingest-ready SOFA file name."""
+        """Construct the ingest-ready SOFA file name for HUTUBS.
+
+        Returns
+        -------
+        str
+            File name in format ``pp{subject}_HRIRs_{kind}.sofa``.
+        """
         return f"pp{dataset_kwargs['subject']}_HRIRs_{dataset_kwargs['kind']}.sofa"

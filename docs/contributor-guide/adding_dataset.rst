@@ -4,10 +4,10 @@ Adding a new Dataset
 ====================
 
 A new Dataset should fit into the shared :class:`~irdl.base.BaseDataset` ``get()`` flow
-rather than implementing its own retrieval pipeline. The Dataset-specific code covers three
-responsibilities: acquiring provider data, preparing a single file for the ``ingest`` stage,
-and reading that file into the internal SOFA representation. See
-:ref:`get-processing-flow` for the full list of extension points.
+rather than implementing its own retrieval pipeline. The Dataset-specific code covers four
+responsibilities: declaring available Providers, acquiring provider data, preparing a single
+file for the ``ingest`` stage when needed, and reading that file into the internal SOFA
+representation. See :ref:`get-processing-flow` for the full list of extension points.
 
 Choose a base class
 -------------------
@@ -17,7 +17,7 @@ Introduce a new Dataset Family class only when at least two Datasets share datas
 in the ``get`` pipeline.
 
 If the provider data is already SOFA-native, consider inheriting from
-:class:`~irdl.sofa.SofaBaseDataset`. :class:`~irdl.sofa.SofaBaseDataset` preserves the same shared flow but
+:class:`~irdl.base.SofaBaseDataset`. :class:`~irdl.base.SofaBaseDataset` preserves the same shared flow but
 avoids unnecessary SOFA output rewrites when ``output_format="sofa"`` is requested.
 
 Implement the Dataset class
@@ -39,6 +39,8 @@ A skeletal Dataset looks like this:
 
        name = "newDataset"
        doi = "10.xxxx/example"
+       canonical_provider = "zenodo"
+       providers = ("zenodo",)
 
        @classmethod
        def get(
@@ -46,6 +48,7 @@ A skeletal Dataset looks like this:
            cache_dir: str | None = None,
            export_dir: str | None = None,
            output_format: str = "pyfar",
+           provider: str = "auto",
            *,
            scenario: str = "default",
        ):
@@ -60,6 +63,7 @@ A skeletal Dataset looks like this:
                cache_dir=cache_dir,
                export_dir=export_dir,
                output_format=output_format,
+               provider=provider,
                scenario=scenario,
            )
 
@@ -72,8 +76,13 @@ A skeletal Dataset looks like this:
            scenario = dataset_kwargs["scenario"]
            return f"new-{scenario}.sofa"
 
-       def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
-           # Retrieve provider file(s) into provider_dir.
+       def _provider_artifact_format(self, provider: str, **dataset_kwargs) -> str:
+           if provider != self.canonical_provider:
+               raise ValueError(f"unknown provider: {provider}")
+           return "sofa"
+
+       def _download(self, provider_dir: Path, provider: str, **dataset_kwargs) -> Path:
+           # Retrieve provider file(s) into provider_dir for the selected Provider.
            # Return the primary provider artifact.
            # Note: The public download() method is a wrapper that calls this _download() method.
            raise NotImplementedError
@@ -91,6 +100,10 @@ A skeletal Dataset looks like this:
 
 Keep this template intentionally small. Do not copy processing logic from another Dataset
 unless the new Dataset has the same provider format and needs the same transformation.
+When adding multiple Providers, keep the Provider-specific part limited to availability facts
+and download mechanics; the Dataset or Dataset Group should still own ingest semantics.
+List ``providers`` in the preference order you want ``provider="auto"`` to try: first
+provider-native candidates, then ingest-derived ones.
 
 Update public API and CLI
 -------------------------
@@ -140,7 +153,28 @@ docs. Maintainers can refresh generated docs during review by running:
 
 .. code-block:: console
 
+   $ uv run make -C docs generated-docs
+
+Then build the full documentation set with:
+
+.. code-block:: console
+
    $ uv run make -C docs html
+
+Provider registries and mirrored files
+--------------------------------------
+
+If a non-canonical Provider mirrors files directly rather than exposing checksums through a DOI
+resolver, package a static registry under ``src/irdl/registry/`` and load it from the Dataset
+code. For example, the SONICOM registry is generated with:
+
+.. code-block:: console
+
+   $ uv run python scripts/update_sonicom_hashes.py
+
+Store keys as provider-relative paths (for example ``hutubs/pp1_HRIRs_measured.sofa``) and values
+as ``sha256:...`` digests. Commit the regenerated registry together with the code change that
+starts relying on it.
 
 Manual verification and Evidence
 --------------------------------
@@ -155,8 +189,8 @@ For example:
    path = NewDataset.get(..., output_format="sofa")
    print(path)
 
-This exercises validation, provider acquisition, processing, ingest, SOFA verification, and
-output conversion. :class:`~irdl.base.BaseDataset` verifies the SOFA convention and prints diagnostics that
+This exercises validation, Provider selection, provider acquisition, processing, ingest,
+SOFA verification, and output conversion. :class:`~irdl.base.BaseDataset` verifies the SOFA convention and prints diagnostics that
 are useful while implementing a Dataset, including during agent-assisted coding.
 
 In your contribution notes, include the command or Python snippet you ran and the smallest

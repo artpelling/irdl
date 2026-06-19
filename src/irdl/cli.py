@@ -196,7 +196,7 @@ def _get_dataset_description(dataset_class: type) -> str:
 
 
 def _display_dataset(dataset_class: type) -> None:
-    """Display a single dataset with its description and DOI."""
+    """Display a single dataset with its description, DOI, and providers."""
     typer.echo(f"  {typer.style(dataset_class.name, fg=typer.colors.BRIGHT_CYAN)}")
     description = _get_dataset_description(dataset_class)
     if description:
@@ -204,6 +204,11 @@ def _display_dataset(dataset_class: type) -> None:
     doi = getattr(dataset_class, "doi", None)
     if doi:
         typer.echo(f"    DOI: https://doi.org/{doi}")
+    providers = getattr(dataset_class, "providers", ())
+    canonical_provider = getattr(dataset_class, "canonical_provider", None)
+    if providers:
+        provider_line = ", ".join(f"{name} (canonical)" if name == canonical_provider else name for name in providers)
+        typer.echo(f"    Providers: {provider_line}")
 
 
 @app.command(name="list", help="List all available datasets.")

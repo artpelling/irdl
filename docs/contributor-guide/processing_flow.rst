@@ -9,8 +9,8 @@ Core architecture
 
 ``BaseDataset``
    The core abstraction for all Datasets. See :class:`~irdl.base.BaseDataset`. It defines the shared ``get`` pipeline:
-   common parameter validation, cache path handling, retrieval/process orchestration, SOFA verification, and output
-   conversion.
+   common parameter validation, Provider selection, cache path handling, retrieval/process orchestration, SOFA verification,
+   and output conversion.
 
 Optional Dataset Family classes
    When multiple Datasets share dataset-specific steps in the get pipeline (see :ref:`get-processing-flow`), a Dataset
@@ -67,13 +67,14 @@ A public ``Dataset.get(...)`` call delegates to the shared :class:`~irdl.base.Ba
    Dataset.get(...)
      └─ BaseDataset._get(...)
          ├─ validate common and Dataset-specific parameters
+         ├─ resolve canonical / explicit / auto Provider choice
          ├─ resolve provider / ingest / output paths
-         ├─ [optional] raw output: retrieve provider artifact and return it
+         ├─ [optional] raw output: retrieve canonical provider artifact and return it
          ├─ reuse cached output if available
-         ├─ reuse ingest file if available
          ├─ retrieve provider artifact if needed
+         ├─ [optional] materialize output directly from a SOFA provider artifact
          ├─ [optional] process provider file(s) into ingest file
-         ├─ ingest to internal SOFA representation
+         ├─ ingest non-SOFA artifacts to internal SOFA representation
          ├─ verify and upgrade SOFA convention
          └─ convert SOFA → requested Output Format
 
@@ -86,7 +87,7 @@ Each Dataset has the following extension points:
    Mandatory. Return the canonical basename for the ingest-ready file.
 
 ``_download()``
-   Mandatory. Acquire provider-stage file(s) and return the primary provider artifact.
+   Mandatory. Acquire provider-stage file(s) for a selected Provider and return the primary provider artifact.
 
 ``_process()``
    Optional. Transform provider-stage files into the single ingest-ready file. The default
@@ -103,9 +104,13 @@ Each Dataset has the following extension points:
 Output behavior
 ---------------
 
-``output_format="raw"`` returns the provider-stage artifact before ``irdl`` processing. For
-all other Output Formats, ``irdl`` ingests the data to SOFA first and then converts from SOFA
-to the requested representation. See the public class docs in :doc:`/reference/python_api`.
+``output_format="raw"`` returns the canonical provider-stage artifact before ``irdl`` processing.
+For all other Output Formats, ``irdl`` either materializes the output directly from a SOFA
+provider artifact or ingests the data to SOFA first and then converts from SOFA to the requested
+representation. ``provider="auto"`` is transparent: IRDL logs the provider-native and
+ingest-derived Provider order, then reports which Provider won. Final non-raw output is reused
+from the ``output`` cache before any Provider download starts, even for explicit Provider
+requests. See the public class docs in :doc:`/reference/python_api`.
 
 When ``export_dir`` is provided, ``irdl`` copies the requested artifact to the Export Directory.
 The cache remains intact so later calls can reuse provider, ingest, or output artifacts.

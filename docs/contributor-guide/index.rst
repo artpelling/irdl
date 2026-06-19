@@ -8,8 +8,8 @@ Developer setup
 ---------------
 
 ``irdl`` uses `uv <https://docs.astral.sh/uv/getting-started/installation/>`_ for
-development. ``uv`` handles virtual environment creation and dependency installation
-automatically. Just prepend development commands with ``uv run``.
+development. Start by syncing the development dependencies, then run tools through
+``uv run``.
 
 .. code-block:: console
 
@@ -19,7 +19,9 @@ automatically. Just prepend development commands with ``uv run``.
    $ uv run make -C docs html
 
 The documentation Makefile regenerates the dataset docs and CLI help snippets that are
-included in the Sphinx documentation. Only the ``README.md`` may need manual updating.
+included in the Sphinx documentation. Treat ``docs/build/`` as generated output; update
+source files under ``docs/`` and then rebuild. ``README.md`` is not generated and may
+need manual updates when user-facing behavior changes.
 
 Coding style
 ------------
@@ -31,6 +33,7 @@ The source of truth for formatting and linting is ``pyproject.toml`` and is enfo
 - Double quotes.
 - NumPy-style docstrings.
 - Prefer explicit ``ValueError`` exceptions for invalid user input rather than ``assert``.
+- Add or update tests whenever retrieval semantics, cache behavior, Provider selection, or documentation-visible output changes.
 - After parameter validation, access required parameters directly, for example
   ``dataset_kwargs["scenario"]`` rather than ``dataset_kwargs.get("scenario")``.
 

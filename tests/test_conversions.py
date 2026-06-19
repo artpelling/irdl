@@ -18,12 +18,20 @@ class TestDataset(BaseDataset):
 
     name = "test"
     doi = "10.0000/test"
+    canonical_provider = "depositonce"
+    providers = ("depositonce",)
 
-    def _validate_params(self, dataset_kwargs):
+    def _validate_params(self, **dataset_kwargs):
         """No-op validation for test dataset."""
 
-    def _download(self, **kwargs):
+    def _provider_artifact_format(self, provider: str, **_dataset_kwargs):
+        """Return provider-side format for test dataset."""
+        assert provider == "depositonce"
+        return "sofa"
+
+    def _download(self, provider_dir: Path, provider: str, **_dataset_kwargs):
         """No-op download for test dataset."""
+        raise NotImplementedError
 
     def _ingest(self, file_path):
         """No-op ingest for test dataset."""

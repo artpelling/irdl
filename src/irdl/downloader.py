@@ -4,10 +4,11 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pooch as po
+from requests.exceptions import RequestException
 
 from irdl.cache import IRDL_CACHE_DIR
-from irdl.logging import RichProgressBar, logger
-from irdl.repositories import doi_to_repository
+from irdl.logging import RichProgressBar, logger, pooch_logger
+from irdl.repositories import DEFAULT_TIMEOUT, _make_session, doi_to_repository
 
 
 def _fetch(pup: po.Pooch, fname: str) -> str:
@@ -26,7 +27,7 @@ def _fetch(pup: po.Pooch, fname: str) -> str:
         The absolute path to the fetched file on disk.
 
     """
-    logger.debug(f"Fetching {fname}")
+    pooch_logger.debug("Fetching %s", fname)
     preset_total = getattr(pup, "file_sizes", {}).get(fname) or 0
     return pup.fetch(fname, progressbar=RichProgressBar(fname, preset_total=preset_total))
 
@@ -83,4 +84,66 @@ def _pooch_from_static_registry(
     """
     pup = po.create(path=path, base_url="", registry=dict(registry), urls=dict(urls), retry_if_failed=2)
     pup.file_sizes = {}
+    return pup
+
+
+def _pooch_from_sonicom_database(
+    path: str | Path,
+    database_url: str,
+    fname: str,
+    checksum: str | None = None,
+) -> po.Pooch:
+    """Create a Pooch instance for one SONICOM file resolved from a database manifest.
+
+    Parameters
+    ----------
+    path : str or :class:`pathlib.Path`
+        Directory where downloaded files should be stored.
+    database_url : str
+        SONICOM database landing page, for example
+        ``https://ecosystem.sonicom.eu/databases/76``.
+    fname : str
+        Datafile name to resolve from the SONICOM download manifest.
+    checksum : str or None, optional
+        Optional checksum for the resolved file, for example ``sha256:...``.
+
+    Returns
+    -------
+    pup : pooch.Pooch
+        The Pooch instance for the resolved file.
+    """
+    manifest_url = f"{database_url.rstrip('/')}/download?type=json"
+    with _make_session() as session:
+        response = session.get(manifest_url, timeout=DEFAULT_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+
+        entries = payload.get("data")
+        if not isinstance(entries, list):
+            msg = f"SONICOM database API at {manifest_url!r} did not return a 'data' list"
+            raise TypeError(msg)
+
+        entry = next((item for item in entries if item.get("Datafile Name") == fname), None)
+        if entry is None:
+            msg = f"SONICOM database {database_url!r} does not list file {fname!r}"
+            raise FileNotFoundError(msg)
+
+        resolved_url = entry.get("Datafile URL")
+        if not isinstance(resolved_url, str):
+            msg = f"SONICOM database {database_url!r} did not provide a valid URL for {fname!r}"
+            raise TypeError(msg)
+
+        file_size = None
+        try:
+            head_response = session.head(resolved_url, allow_redirects=True, timeout=DEFAULT_TIMEOUT)
+            head_response.raise_for_status()
+            resolved_url = head_response.url
+            content_length = head_response.headers.get("Content-Length")
+            if content_length is not None:
+                file_size = int(content_length)
+        except (OSError, RequestException, ValueError) as exc:  # pragma: no cover
+            logger.debug("HEAD resolution failed for %s: %s", resolved_url, exc)
+
+    pup = po.create(path=path, base_url="", registry={fname: checksum}, urls={fname: resolved_url}, retry_if_failed=2)
+    pup.file_sizes = {fname: file_size} if file_size is not None else {}
     return pup
