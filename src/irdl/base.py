@@ -72,7 +72,8 @@ class BaseDataset(ABC):
     """
 
     name: str
-    doi: str
+    doi: str | None
+    source_url: str | None = None
     _chunk_size = DEFAULT_CHUNK_SIZE
 
     # Default docstring prefix for all get() classmethods
@@ -94,16 +95,17 @@ output_format : str
         """Initialize subclass with automatic docstring composition for get() classmethod."""
         super().__init_subclass__(**dataset_kwargs)
         # Automatically compose docstrings for get() classmethod
-        if hasattr(cls, "get") and hasattr(cls, "name") and hasattr(cls, "doi"):
+        if hasattr(cls, "get") and hasattr(cls, "name"):
             # Get the underlying function of the classmethod
             get_func = cls.get.__func__
             # Get the first line of the class docstring for the summary
             class_doc = cls.__doc__ or ""
             doc_lines = class_doc.strip().split("\n") if class_doc.strip() else []
             summary_line = doc_lines[0] if doc_lines else ""
-            # Construct DOI line from cls.doi attribute
-            doi_url = f"https://doi.org/{cls.doi}"
-            doi_cli_line = f"DOI: {doi_url}"
+            # Add a DOI only when the provider actually assigns one.
+            identifier_line = f"DOI: https://doi.org/{cls.doi}" if cls.doi else None
+            if identifier_line is None and cls.source_url:
+                identifier_line = f"Source: {cls.source_url}"
             # Format prefix with class attributes
             prefix = BaseDataset._get_doc_prefix.format(name=cls.name.upper(), doi=cls.doi)
             # If class has a docstring with a summary, replace the first line of prefix
@@ -111,9 +113,10 @@ output_format : str
                 # Split prefix into lines and replace the first line
                 prefix_lines = prefix.split("\n")
                 prefix_lines[0] = summary_line
-                # Insert DOI line after the summary
-                prefix_lines.insert(1, "")
-                prefix_lines.insert(2, doi_cli_line)
+                # Insert a verified provider identifier after the summary.
+                if identifier_line:
+                    prefix_lines.insert(1, "")
+                    prefix_lines.insert(2, identifier_line)
                 prefix = "\n".join(prefix_lines)
             # Get subclass-specific docstring (from the base class _get method)
             suffix = get_func.__doc__ or ""
