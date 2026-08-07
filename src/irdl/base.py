@@ -23,6 +23,7 @@ from enum import StrEnum
 from inspect import isabstract
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import urlparse
 
 import h5py as h5
 import netCDF4
@@ -31,8 +32,9 @@ import pyfar as pf
 import sofar as sf
 
 from irdl.cache import IRDL_CACHE_DIR
+from irdl.downloader import _fetch, _pooch_from_static_registry
 from irdl.logging import logger
-from irdl.utils import _link_or_copy, _preserve_permissions
+from irdl.utils import _link_or_copy, _preserve_permissions, load_hash_registry
 
 _SOFA_FIR_E_DIMS = 4
 DEFAULT_CHUNK_SIZE = 256
@@ -61,6 +63,8 @@ class BaseDataset(ABC):
         Validate dataset-specific parameters (including output_format).
     _source_filename(**dataset_kwargs) -> str
         Construct the raw input filename with extension.
+    direct_sofa_url(source_filename) -> str | None
+        Optionally locate a direct SOFA source for non-raw retrieval.
     _download(**dataset_kwargs) -> Path
         Download and return Path to raw file.
     _process(provider_artifact: Path, ingest_path: Path, **_dataset_kwargs) -> Path:
@@ -167,21 +171,26 @@ output_format : str
         output_path = self._output_path(output_dir, source_filename, output_format)
         ingest_path = cache_dir / "ingest" / source_filename
 
-        # Special handling for raw output format
+        # Raw always uses the Dataset DOI.
         if output_format == "raw":
             provider_artifact = self.download(provider_dir, **dataset_kwargs)
             if export_dir is None:
                 return provider_artifact
             return self._export_raw(provider_artifact, export_dir)
 
-        # Early exit if output file already exists (not applicable for raw format, handled above)
+        sofa_path = self._output_path(cache_dir / "output", source_filename, "sofa")
         if output_path is not None and output_path.exists():
             logger.info(f"Output file already exists at {output_path}, skipping download and conversion.")
+            if output_format == "sofa":
+                self._verify_sofa_convention(output_path)
             return output_path
 
-        sofa_path = self._output_path(cache_dir / "output", source_filename, "sofa")
+        direct_sofa_url = self.direct_sofa_url(source_filename)
         if sofa_path.exists():
             logger.info(f"Cache hit: {sofa_path}.")
+        elif direct_sofa_url is not None:
+            provider_artifact = self.download(provider_dir, direct_sofa_url=direct_sofa_url)
+            _link_or_copy(provider_artifact, sofa_path)
         else:
             if ingest_path.exists():
                 logger.info(f"Ingestible file already exists at {ingest_path}, skipping download and processing.")
@@ -192,8 +201,8 @@ output_format : str
             logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
             with logger.spin(f"Writing SOFA {sofa_path.name}..."):
                 self._ingest(ingest_artifact, sofa_path, **dataset_kwargs)
-            with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
-                self._verify_sofa_convention(sofa_path)
+        with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
+            self._verify_sofa_convention(sofa_path)
 
         return self._to_output(output_format, sofa_path, output_path)
 
@@ -259,8 +268,31 @@ output_format : str
             "FABIAN_HRIR_measured_HATO_0.sofa").
         """
 
-    def download(self, provider_dir: Path, **dataset_kwargs) -> Path:
-        """Download raw files and return Path to the primary artifact.
+    def direct_sofa_url(self, _source_filename: str) -> str | None:
+        """Return a direct SOFA URL for non-raw retrieval, if available."""
+        return None
+
+    def _download_direct_sofa(self, provider_dir: Path, url: str) -> Path:
+        """Download one hash-verified direct SOFA artifact."""
+        filename = Path(urlparse(url).path).name
+        if Path(filename).suffix.lower() != ".sofa":
+            msg = f"Direct SOFA URL must name a .sofa file: {url!r}"
+            raise ValueError(msg)
+        try:
+            known_hash = load_hash_registry("direct_sofa")[url]
+        except KeyError as error:
+            msg = f"Missing direct SOFA hash registry entry for {url!r}"
+            raise ValueError(msg) from error
+        pup = _pooch_from_static_registry(
+            path=provider_dir,
+            registry={filename: known_hash},
+            urls={filename: url},
+        )
+        _fetch(pup, filename)
+        return provider_dir / filename
+
+    def download(self, provider_dir: Path, *, direct_sofa_url: str | None = None, **dataset_kwargs) -> Path:
+        """Download raw or direct-SOFA files and return the primary artifact.
 
         This method wraps _download to enforce provider_dir existence for all subclasses.
 
@@ -279,6 +311,8 @@ output_format : str
             Path to the downloaded artifact on disk (file or directory).
         """
         provider_dir.mkdir(exist_ok=True, parents=True)
+        if direct_sofa_url is not None:
+            return self._download_direct_sofa(provider_dir, direct_sofa_url)
         return self._download(provider_dir, **dataset_kwargs)
 
     @abstractmethod
