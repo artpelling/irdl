@@ -11,7 +11,7 @@ from irdl.logging import logger
 
 
 class MultiRoomTransitionDataset(BaseDataset):
-    """Download one SOFA file from the Multi Room Transition Dataset."""
+    """Download the MRTD dataset from Zenodo."""
 
     name = "mrtd"
     doi = "10.5281/zenodo.13341566"
