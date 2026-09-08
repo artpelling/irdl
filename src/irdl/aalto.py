@@ -30,7 +30,7 @@ class MultiRoomTransitionDataset(BaseDataset):
         output_format: str = "pyfar",
     ) -> dict | Path | None:
         """
-        Environment : str, optional
+        environment : str, optional
             Acoustic environment. One of 'hallways-lecturehall', 'offices',
             or 'workshops'. Default is 'offices'.
         receiver : str, optional
@@ -44,7 +44,7 @@ class MultiRoomTransitionDataset(BaseDataset):
         dict or Path
             For 'pyfar' / 'numpy': dict of in-memory objects.
             For 'sofa' / 'hdf5' / 'raw': Path to file on disk.
-        """  # noqa: D205
+        """  # noqa: D205 D403
         return cls()._get(
             environment=environment,
             receiver=receiver,
