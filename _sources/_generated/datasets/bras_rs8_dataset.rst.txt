@@ -1,0 +1,9 @@
+``BrasRs8Dataset``
+==================
+
+.. currentmodule:: irdl
+
+.. autoclass:: BrasRs8Dataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

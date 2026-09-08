@@ -1,0 +1,9 @@
+``HutubsDataset``
+=================
+
+.. currentmodule:: irdl
+
+.. autoclass:: HutubsDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

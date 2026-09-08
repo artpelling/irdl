@@ -1,0 +1,13 @@
+Head Related Impulse Responses
+==============================
+
+.. autosummary::
+
+   ~irdl.akt.FabianDataset
+   ~irdl.akt.HutubsDataset
+
+.. toctree::
+   :hidden:
+
+   fabian_dataset
+   hutubs_dataset

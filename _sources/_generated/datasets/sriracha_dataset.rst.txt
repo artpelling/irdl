@@ -1,0 +1,9 @@
+``SrirachaDataset``
+===================
+
+.. currentmodule:: irdl
+
+.. autoclass:: SrirachaDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

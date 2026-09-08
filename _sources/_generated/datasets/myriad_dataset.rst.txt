@@ -1,0 +1,9 @@
+``MyriadDataset``
+=================
+
+.. currentmodule:: irdl
+
+.. autoclass:: MyriadDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

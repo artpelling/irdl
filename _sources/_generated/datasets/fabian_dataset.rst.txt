@@ -1,0 +1,9 @@
+``FabianDataset``
+=================
+
+.. currentmodule:: irdl
+
+.. autoclass:: FabianDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

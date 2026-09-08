@@ -1,0 +1,19 @@
+Room Impulse Responses
+======================
+
+.. autosummary::
+
+   ~irdl.akt.BrasRs8Dataset
+   ~irdl.ista.MiracleDataset
+   ~irdl.aalto.MultiRoomTransitionDataset
+   ~irdl.esat.MyriadDataset
+   ~irdl.ista.SrirachaDataset
+
+.. toctree::
+   :hidden:
+
+   bras_rs8_dataset
+   miracle_dataset
+   multi_room_transition_dataset
+   myriad_dataset
+   sriracha_dataset

@@ -1,0 +1,11 @@
+``MultiRoomTransitionDataset``
+==============================
+
+.. currentmodule:: irdl
+
+.. include:: ../../datasets/mrtd.rst
+
+.. autoclass:: MultiRoomTransitionDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

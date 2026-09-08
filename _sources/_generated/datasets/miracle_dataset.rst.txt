@@ -1,0 +1,9 @@
+``MiracleDataset``
+==================
+
+.. currentmodule:: irdl
+
+.. autoclass:: MiracleDataset
+   :members:
+   :undoc-members: false
+   :show-inheritance:

@@ -1,0 +1,287 @@
+# `irdl`
+
+Handle version flag.
+
+**Usage**:
+
+```console
+$ irdl [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--version`: Show version and exit.
+* `--install-completion`: Install completion for the current shell.
+* `--show-completion`: Show completion for the current shell, to copy it or customize the installation.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `list`: List all available datasets.
+* `cache`: Manage cache directory.
+* `get`: Download datasets.
+
+## `irdl list`
+
+List all available datasets.
+
+**Usage**:
+
+```console
+$ irdl list [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+## `irdl cache`
+
+Manage cache directory.
+
+**Usage**:
+
+```console
+$ irdl cache [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--cache-dir PATH`: Custom cache directory path.
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `size`: Show cache directory size.
+* `dir`: Show cache directory path.
+* `clean`: Wipe cache directory.
+* `prune`: Remove unreachable cache items for known...
+
+### `irdl cache size`
+
+Show cache directory size.
+
+**Usage**:
+
+```console
+$ irdl cache size [OPTIONS]
+```
+
+**Options**:
+
+* `-H, --human-readable`: Format size with binary units.
+* `--help`: Show this message and exit.
+
+### `irdl cache dir`
+
+Show cache directory path.
+
+**Usage**:
+
+```console
+$ irdl cache dir [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `irdl cache clean`
+
+Wipe cache directory.
+
+**Usage**:
+
+```console
+$ irdl cache clean [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+### `irdl cache prune`
+
+Remove unreachable cache items for known datasets.
+
+**Usage**:
+
+```console
+$ irdl cache prune [OPTIONS]
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+## `irdl get`
+
+Download datasets.
+
+**Usage**:
+
+```console
+$ irdl get [OPTIONS] COMMAND [ARGS]...
+```
+
+**Options**:
+
+* `--help`: Show this message and exit.
+
+**Commands**:
+
+* `bras-rs8`: Download the BRAS RS8 dataset from...
+* `fabian`: Download and extract the FABIAN HRTF...
+* `hutubs`: Download the HUTUBS HRTF database from...
+* `miracle`: Download the MIRACLE database from...
+* `mrtd`: Download the MRTD dataset from Zenodo.
+* `myriad`: Download the MYRiAD database (RIR subset)...
+* `sriracha`: Download and merge the SRIRACHA database...
+
+### `irdl get bras-rs8`
+
+Download the BRAS RS8 dataset from DepositOnce.
+
+DOI: https://doi.org/10.14279/depositonce-25649
+
+**Usage**:
+
+```console
+$ irdl get bras-rs8 [OPTIONS]
+```
+
+**Options**:
+
+* `--scene TEXT`: Scene identifier to download. One of: &#x27;01a&#x27;, &#x27;01b&#x27;, &#x27;01c&#x27;, &#x27;02&#x27;, &#x27;03a&#x27;, &#x27;03b&#x27;, &#x27;03c&#x27;, &#x27;03d&#x27;, &#x27;03e&#x27;. Default is &#x27;01a&#x27;.  [default: 01a]
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/BRAS-RS8/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get fabian`
+
+Download and extract the FABIAN HRTF database from DepositOnce.
+
+DOI: https://doi.org/10.14279/depositonce-5718.5
+
+**Usage**:
+
+```console
+$ irdl get fabian [OPTIONS]
+```
+
+**Options**:
+
+* `--kind TEXT`: Type of HRTF to download. Either &#x27;measured&#x27; or &#x27;simulated&#x27;. Default is &#x27;measured&#x27;.  [default: measured]
+* `--hato INTEGER`: Head-above-torso-rotation of HRTFs in degrees. One of: 0, 10, 20, 30, 40, 50, 310, 320, 330, 340, 350. Default is 0.  [default: 0]
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/FABIAN/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get hutubs`
+
+Download the HUTUBS HRTF database from DepositOnce.
+
+DOI: https://doi.org/10.14279/depositonce-8487
+
+**Usage**:
+
+```console
+$ irdl get hutubs [OPTIONS]
+```
+
+**Options**:
+
+* `--subject INTEGER`: Subject identifier. Must be an integer in the range 1 to 96. Default is 1.  [default: 1]
+* `--kind TEXT`: HUTUBS HRIR variant. Either &#x27;measured&#x27; or &#x27;simulated&#x27;. Default is &#x27;measured&#x27;.  [default: measured]
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/HUTUBS/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get miracle`
+
+Download the MIRACLE database from DepositOnce.
+
+DOI: https://doi.org/10.14279/depositonce-20837
+
+**Usage**:
+
+```console
+$ irdl get miracle [OPTIONS]
+```
+
+**Options**:
+
+* `--scenario TEXT`: Scenario to download. One of &#x27;A1&#x27;, &#x27;A2&#x27;, &#x27;D1&#x27;, &#x27;R2&#x27;.  [default: A1]
+* `--dataset-split TEXT`: Artificial dataset split. One of &#x27;C1&#x27;, &#x27;C2&#x27;, &#x27;C3&#x27;, &#x27;C4&#x27; or None. Dense scenarios (D1) cannot be split.
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/MIRACLE/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get mrtd`
+
+Download the MRTD dataset from Zenodo.
+
+DOI: https://doi.org/10.5281/zenodo.13341566
+
+**Usage**:
+
+```console
+$ irdl get mrtd [OPTIONS]
+```
+
+**Options**:
+
+* `--environment TEXT`: Acoustic environment. One of &#x27;hallways-lecturehall&#x27;, &#x27;offices&#x27;, or &#x27;workshops&#x27;. Default is &#x27;offices&#x27;.  [default: offices]
+* `--receiver TEXT`: &#x27;kemar&#x27; selects the binaural KEMAR and &#x27;zoom&#x27; selects the four-channel Zoom H3-VR. Default is &#x27;kemar&#x27;.  [default: kemar]
+* `--loudspeaker INTEGER`: Stationary loudspeaker number from 1 through 4. Default is 1.  [default: 1]
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/MRTD/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get myriad`
+
+Download the MYRiAD database (RIR subset) from Zenodo.
+
+DOI: https://doi.org/10.5281/zenodo.7389996
+
+**Usage**:
+
+```console
+$ irdl get myriad [OPTIONS]
+```
+
+**Options**:
+
+* `--room TEXT`: Room to load. Either &#x27;SAL&#x27; or &#x27;AIL&#x27;. Default is &#x27;SAL&#x27;.  [default: SAL]
+* `--array TEXT`: Microphone array group(s) to load. One of &#x27;dummy_head&#x27;, &#x27;bte-pieces&#x27;, &#x27;external-microphones&#x27;, &#x27;circular-microphone-array&#x27;, a comma-separated combination of these (e.g. &#x27;dummy_head,bte-pieces&#x27;), or &#x27;all&#x27; for every group available in the room. A list of group names is also accepted via the Python API. The circular array is only available in &#x27;AIL&#x27;. Default is &#x27;all&#x27;.  [default: all]
+* `--config TEXT`: Microphone configuration placement in the AIL. Either &#x27;P1&#x27; or &#x27;P2&#x27;. Ignored for the SAL. Default is &#x27;P1&#x27;.  [default: P1]
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/MYRIAD/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
+
+### `irdl get sriracha`
+
+Download and merge the SRIRACHA database from DepositOnce.
+
+DOI: https://doi.org/10.14279/depositonce-23943
+
+**Usage**:
+
+```console
+$ irdl get sriracha [OPTIONS]
+```
+
+**Options**:
+
+* `--scenario TEXT`: Scenario to download. One of &#x27;SR1&#x27;, &#x27;SRA1&#x27;, &#x27;SR1-D&#x27;, &#x27;SRA1-D&#x27;, &#x27;SR2&#x27;, &#x27;SRA2&#x27;, &#x27;SR2-D&#x27;, &#x27;SRA2-D&#x27;. Default is &#x27;SR1-D&#x27;.  [default: SR1-D]
+* `--dataset-split TEXT`: Optional dataset split for full-plane scenarios. One of &#x27;C1&#x27;, &#x27;C2&#x27;, &#x27;C3&#x27;, &#x27;C4&#x27; or None. Dense scenarios (ending in &#x27;-D&#x27;) do not have splits. Default is None.
+* `--cache-dir TEXT`: Cache directory for downloads. Defaults is the OS user cache directory. This default can be overridden by setting IRDL_CACHE_DIR environment variable.
+* `--export-dir TEXT`: Directory for final output. If specified, the data will be exported to &lt;export_dir/SRIRACHA/&gt;. Else, it remains in &lt;cache_dir/output/&gt;.
+* `--output-format TEXT`: Output format: &#x27;pyfar&#x27;, &#x27;numpy&#x27;, &#x27;hdf5&#x27;, &#x27;sofa&#x27;, or &#x27;raw&#x27;.  [default: pyfar]
+* `--help`: Show this message and exit.
