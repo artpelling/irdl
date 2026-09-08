@@ -9,28 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- MRTD dataset by [@Akinesia112](https://github.com/Akinesia112)
-
-### Fixed
-- Documentation build for Dataset overview pages
-
 ---
 
-## [1.0.0b5] - 2026-06-19
+## [1.0.0b5] - 2026-09-08
 
 ### Added
 - `BrasRs8Dataset` for the BRAS-RS8 room impulse response dataset
 - `MyriadDataset` for selectable MYRiAD room and microphone-array responses
+- `MultiRoomTransitionDataset`  by [@Akinesia112](https://github.com/Akinesia112)
 
 ### Changed
 - Reorganized dataset implementations by institution while retaining the top-level dataset API
 - Centralized SOFA convention validation and improved streaming ingestion for ISTA datasets
 - Updated contributor documentation for the dataset processing flow
+- Upstreamed streaming SOFA verification to sofar; IRDL now requires `sofar>=1.3.0`
 
 ### Fixed
 - Preserved file permissions when copying cached and exported artifacts
 - Improved Windows compatibility for conversions and ISTA processing
+- DepositOnce compatibility with the current DSpace API
+- DepositOnce discovery of files across paginated repository responses
+- Documentation build for Dataset overview pages
 
 ### Removed
 - Obsolete SOFAcoustics implementation and checksum registry
