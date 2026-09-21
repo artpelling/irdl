@@ -1,5 +1,8 @@
 """Implements download and post-processing based on pooch."""
 
+from collections.abc import Mapping
+from pathlib import Path
+
 import pooch as po
 
 from irdl.cache import IRDL_CACHE_DIR
@@ -26,6 +29,17 @@ def _fetch(pup: po.Pooch, fname: str) -> str:
     logger.debug(f"Fetching {fname}")
     preset_total = getattr(pup, "file_sizes", {}).get(fname) or 0
     return pup.fetch(fname, progressbar=RichProgressBar(fname, preset_total=preset_total))
+
+
+def _pooch_from_static_registry(
+    path: str | Path,
+    registry: Mapping[str, str],
+    urls: Mapping[str, str],
+) -> po.Pooch:
+    """Create a Pooch instance for hash-verified direct downloads."""
+    pup = po.create(path=path, base_url="", registry=dict(registry), urls=dict(urls), retry_if_failed=2)
+    pup.file_sizes = {}
+    return pup
 
 
 def _pooch_from_doi(doi: str, path: str = IRDL_CACHE_DIR) -> po.Pooch:

@@ -20,6 +20,11 @@ If the provider data is already SOFA-native, keep inheriting from
 :class:`~irdl.base.BaseDataset`. The default ``_ingest()`` promotes SOFA files directly
 without rewriting them.
 
+If the DOI provider is not SOFA-native but every Dataset selection has a direct SOFA
+source, override ``direct_sofa_url(source_filename)``. Add each URL and SHA-256 digest to
+``src/irdl/registry/direct_sofa_hashes.json``. This path serves non-raw retrieval only;
+``output_format="raw"`` continues to download the DOI provider artifact.
+
 Choose a module
 ----------------
 

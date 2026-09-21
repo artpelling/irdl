@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+import sofar as sf
 
 from irdl.base import BaseDataset
 from irdl.ista import IstaBaseDataset
@@ -86,6 +87,49 @@ class TestBaseDatasetHelpers:
 
         assert dataset.process(provider_artifact, ingest_path, scenario="demo") == ingest_path
         assert ingest_path.exists()
+
+
+class TestDirectSofaProvider:
+    """Tests for optional direct-SOFA retrieval."""
+
+    def test_non_raw_uses_direct_sofa_without_ingest(self, monkeypatch, sofa_object, tmp_path):
+        """Direct SOFA bypasses the DOI download and ingest stage."""
+
+        class DirectSofaDataset(BaseDataset):
+            name = "direct"
+            doi = "10.0000/direct"
+
+            def _validate_params(self, **_dataset_kwargs):
+                pass
+
+            def _source_filename(self, **_dataset_kwargs):
+                return "canonical.h5"
+
+            def _download(self, _provider_dir: Path, **_dataset_kwargs):
+                msg = "DOI download must only serve raw requests"
+                raise AssertionError(msg)
+
+            def direct_sofa_url(self, source_filename: str):
+                assert source_filename == "canonical.h5"
+                return "https://example.invalid/alternate.sofa"
+
+        dataset = DirectSofaDataset()
+
+        def download_direct(provider_dir: Path, url: str) -> Path:
+            assert url == "https://example.invalid/alternate.sofa"
+            provider_dir.mkdir(parents=True, exist_ok=True)
+            path = provider_dir / "alternate.sofa"
+            sf.write_sofa(path, sofa_object)
+            return path
+
+        monkeypatch.setattr(dataset, "_download_direct_sofa", download_direct)
+
+        result = dataset._get(cache_dir=tmp_path, export_dir=None, output_format="sofa")
+
+        assert result == tmp_path / "DIRECT" / "output" / "canonical.sofa"
+        assert result.exists()
+        assert (tmp_path / "DIRECT" / "provider" / "alternate.sofa").exists()
+        assert not (tmp_path / "DIRECT" / "ingest").exists()
 
 
 class TestIstaBaseDatasetAbstract:
