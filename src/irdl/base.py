@@ -54,8 +54,10 @@ class BaseDataset(ABC):
     ----------
     name : str
         Unique identifier for the Dataset.
-    doi : str
-        Digital Object Identifier for the Dataset.
+    doi : str or None
+        Digital Object Identifier for the Dataset, when assigned.
+    source_url : str or None
+        Dataset landing page when no DOI is assigned.
 
     Methods
     -------
@@ -76,7 +78,8 @@ class BaseDataset(ABC):
     """
 
     name: str
-    doi: str
+    doi: str | None
+    source_url: str | None = None
     _chunk_size = DEFAULT_CHUNK_SIZE
 
     # Default docstring prefix for all get() classmethods
@@ -105,9 +108,8 @@ output_format : str
             class_doc = cls.__doc__ or ""
             doc_lines = class_doc.strip().split("\n") if class_doc.strip() else []
             summary_line = doc_lines[0] if doc_lines else ""
-            # Construct DOI line from cls.doi attribute
-            doi_url = f"https://doi.org/{cls.doi}"
-            doi_cli_line = f"DOI: {doi_url}"
+            # Use the landing page when this Dataset has no DOI.
+            doi_cli_line = f"DOI: https://doi.org/{cls.doi}" if cls.doi is not None else f"Source: {cls.source_url}"
             # Format prefix with class attributes
             prefix = BaseDataset._get_doc_prefix.format(name=cls.name.upper(), doi=cls.doi)
             # If class has a docstring with a summary, replace the first line of prefix

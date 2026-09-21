@@ -14,6 +14,9 @@ from zipfile import ZipFile
 from irdl.base import BaseDataset, DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
+from irdl.utils import load_url_registry
+
+_SONICOM_URLS = load_url_registry("sonicom")
 
 
 class AKTZipBaseDataset(BaseDataset):
@@ -318,3 +321,7 @@ class HutubsDataset(AKTZipBaseDataset):
     def _source_filename(self, **dataset_kwargs) -> str:
         """Construct the ingest-ready SOFA file name."""
         return f"pp{dataset_kwargs['subject']}_HRIRs_{dataset_kwargs['kind']}.sofa"
+
+    def direct_sofa_url(self, source_filename: str) -> str | None:
+        """Return SONICOM's direct URL for the requested individual HUTUBS SOFA."""
+        return _SONICOM_URLS.get(source_filename)

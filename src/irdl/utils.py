@@ -34,6 +34,25 @@ def load_hash_registry(provider_name: str) -> dict[str, str]:
     return registry
 
 
+@cache
+def load_url_registry(provider_name: str) -> dict[str, str]:
+    """Load and validate a packaged provider filename-to-URL registry."""
+    resource = resources.files("irdl").joinpath("registry", f"{provider_name}_urls.json")
+    with resource.open("r", encoding="utf-8") as handle:
+        registry = json.load(handle)
+    if not isinstance(registry, dict):
+        msg = f"URL registry '{provider_name}' must be a JSON object"
+        raise TypeError(msg)
+    for filename, url in registry.items():
+        if not isinstance(filename, str) or Path(filename).name != filename:
+            msg = f"URL registry '{provider_name}' contains invalid filename: {filename!r}"
+            raise ValueError(msg)
+        if not isinstance(url, str) or not url.startswith("https://"):
+            msg = f"URL registry '{provider_name}' contains invalid URL for {filename!r}: {url!r}"
+            raise ValueError(msg)
+    return registry
+
+
 def _validate_hash_registry(provider_name: str, registry: object) -> None:
     """Validate the common flat hash-registry schema.
 
