@@ -201,9 +201,7 @@ def _display_dataset(dataset_class: type) -> None:
     description = _get_dataset_description(dataset_class)
     if description:
         typer.echo(f"    {description}")
-    doi = getattr(dataset_class, "doi", None)
-    if doi:
-        typer.echo(f"    DOI: https://doi.org/{doi}")
+    typer.echo(f"    DOI: https://doi.org/{dataset_class.doi}")
 
 
 @app.command(name="list", help="List all available datasets.")

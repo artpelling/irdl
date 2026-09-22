@@ -1,42 +1,95 @@
 """Native-SOFA datasets hosted by the SONICOM Ecosystem."""
 
+import json
+from functools import cache
 from pathlib import Path
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 from irdl.base import BaseDataset, DatasetCategory
-from irdl.utils import load_url_registry
+from irdl.utils import load_hash_registry
 
-_SONICOM_URLS = load_url_registry("sonicom")
+_SONICOM_ROOT = "https://ecosystem.sonicom.eu"
 
 
-class SonicomSofaDataset(BaseDataset):
-    """Base class for SONICOM datasets supplied as individual SOFA files."""
+@cache
+def _sonicom_manifest(database_id: int) -> dict[str, str]:
+    """Return the current SONICOM filename-to-URL manifest for one database."""
+    url = f"{_SONICOM_ROOT}/databases/{database_id}/download?type=json"
+    try:
+        with urlopen(url) as response:  # noqa: S310 - fixed HTTPS provider endpoint
+            payload = json.load(response)
+    except (OSError, json.JSONDecodeError) as error:
+        msg = f"Could not retrieve SONICOM manifest for database {database_id}"
+        raise RuntimeError(msg) from error
 
-    doi = None
-    source_url = "https://ecosystem.sonicom.eu/databases"
-    _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
+    try:
+        datafiles = payload["data"]
+    except (KeyError, TypeError) as error:
+        msg = f"Invalid SONICOM manifest for database {database_id}"
+        raise ValueError(msg) from error
+    if not isinstance(datafiles, list):
+        msg = f"Invalid SONICOM manifest for database {database_id}"
+        raise TypeError(msg)
+
+    prefix = f"{_SONICOM_ROOT}/data/{database_id}/"
+    manifest = {}
+    for datafile in datafiles:
+        try:
+            filename = datafile["Datafile Name"]
+            datafile_url = datafile["Datafile URL"]
+        except (KeyError, TypeError) as error:
+            msg = f"Invalid SONICOM manifest entry for database {database_id}"
+            raise ValueError(msg) from error
+        if (
+            not isinstance(filename, str)
+            or Path(filename).name != filename
+            or not isinstance(datafile_url, str)
+            or not datafile_url.startswith(prefix)
+            or Path(urlparse(datafile_url).path).name != filename
+        ):
+            msg = f"Invalid SONICOM manifest entry for database {database_id}"
+            raise ValueError(msg)
+        manifest[filename] = datafile_url
+    return manifest
+
+
+class SonicomBaseDataset:
+    """Resolve SONICOM URLs dynamically while pinning checked-in SOFA digests."""
+
+    sonicom_database_id: int
+
+    def direct_sofa_hash(self, source_filename: str) -> str | None:
+        """Return the checked-in digest for a SONICOM SOFA filename."""
+        return load_hash_registry("sonicom").get(source_filename)
 
     def direct_sofa_url(self, source_filename: str) -> str | None:
-        """Return the verified SONICOM URL for a native SOFA file."""
-        return _SONICOM_URLS.get(source_filename)
+        """Resolve a registered SONICOM SOFA filename through its live manifest."""
+        if self.direct_sofa_hash(source_filename) is None:
+            return None
+        return _sonicom_manifest(self.sonicom_database_id).get(source_filename)
 
-    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+    def _download_sonicom_sofa(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Download the requested native SOFA file from SONICOM."""
         source_filename = self._source_filename(**dataset_kwargs)
+        known_hash = self.direct_sofa_hash(source_filename)
         url = self.direct_sofa_url(source_filename)
-        if url is None:
-            msg = f"No SONICOM SOFA URL registered for {source_filename!r}"
+        if url is None or known_hash is None:
+            msg = f"No SONICOM SOFA hash registered for {source_filename!r}"
             raise ValueError(msg)
-        return self._download_direct_sofa(provider_dir, url)
+        return self._download_direct_sofa(provider_dir, url, known_hash)
 
 
-class CipicDataset(SonicomSofaDataset):
-    """Download an individual CIPIC HRTF SOFA file from SONICOM."""
+class CipicDataset(SonicomBaseDataset, BaseDataset):
+    """Download the CIPIC HRTF database from SONICOM."""
 
     name = "cipic"
-    source_url = "https://ecosystem.sonicom.eu/databases/72"
+    doi = "10.1109/ASPAA.2001.969552"
+    _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
+    sonicom_database_id = 72
     _subjects = frozenset(
         int(filename.removeprefix("subject_").removesuffix(".sofa"))
-        for filename in _SONICOM_URLS
+        for filename in load_hash_registry("sonicom")
         if filename.startswith("subject_")
     )
 
@@ -65,11 +118,15 @@ class CipicDataset(SonicomSofaDataset):
             output_format=output_format,
         )
 
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the requested native SOFA file from SONICOM."""
+        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
+
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate the CIPIC subject identifier."""
         subject = dataset_kwargs["subject"]
         if not isinstance(subject, int) or subject not in self._subjects:
-            msg = "subject must identify a CIPIC SOFA file"
+            msg = f"subject must be one of {sorted(self._subjects)}"
             raise ValueError(msg)
 
     def _source_filename(self, **dataset_kwargs) -> str:
@@ -77,13 +134,17 @@ class CipicDataset(SonicomSofaDataset):
         return f"subject_{dataset_kwargs['subject']:03d}.sofa"
 
 
-class SadieDataset(SonicomSofaDataset):
-    """Download an individual SADIE II HRTF SOFA file from SONICOM."""
+class SadieDataset(SonicomBaseDataset, BaseDataset):
+    """Download the SADIE II database from SONICOM."""
 
     name = "sadie"
-    source_url = "https://ecosystem.sonicom.eu/databases/92"
+    doi = "10.3390/app8112029"
+    _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
+    sonicom_database_id = 92
     _subjects = frozenset(
-        filename.split("_", 1)[0] for filename in _SONICOM_URLS if filename.endswith("_48K_24bit_256tap_FIR_SOFA.sofa")
+        filename.split("_", 1)[0]
+        for filename in load_hash_registry("sonicom")
+        if filename.endswith("_48K_24bit_256tap_FIR_SOFA.sofa")
     )
 
     @classmethod
@@ -111,6 +172,10 @@ class SadieDataset(SonicomSofaDataset):
             export_dir=export_dir,
             output_format=output_format,
         )
+
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the requested native SOFA file from SONICOM."""
+        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
 
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate the SADIE II listener or dummy-head identifier."""
