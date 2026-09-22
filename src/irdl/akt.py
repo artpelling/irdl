@@ -14,6 +14,7 @@ from zipfile import ZipFile
 from irdl.base import BaseDataset, DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
+from irdl.sonicom import SonicomBaseDataset
 
 
 class AKTZipBaseDataset(BaseDataset):
@@ -263,13 +264,14 @@ class FabianDataset(AKTZipBaseDataset):
         return f"FABIAN_HRIR_{dataset_kwargs['kind']}_HATO_{dataset_kwargs['hato']}.sofa"
 
 
-class HutubsDataset(AKTZipBaseDataset):
-    """Download the HUTUBS HRTF database from DepositOnce."""
+class HutubsDataset(SonicomBaseDataset, AKTZipBaseDataset):
+    """Download the HUTUBS HRTF database from DepositOnce/SONICOM."""
 
     name = "hutubs"
     doi = "10.14279/depositonce-8487"
     _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
     _zipfile = "HRIRs.zip"
+    sonicom_database_id = 76
 
     @classmethod
     def get(

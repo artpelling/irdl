@@ -34,7 +34,7 @@ import sofar as sf
 from irdl.cache import IRDL_CACHE_DIR
 from irdl.downloader import _fetch, _pooch_from_static_registry
 from irdl.logging import logger
-from irdl.utils import _link_or_copy, _preserve_permissions, load_hash_registry
+from irdl.utils import _link_or_copy, _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4
 DEFAULT_CHUNK_SIZE = 256
@@ -97,17 +97,20 @@ output_format : str
     def __init_subclass__(cls, **dataset_kwargs) -> None:
         """Initialize subclass with automatic docstring composition for get() classmethod."""
         super().__init_subclass__(**dataset_kwargs)
+        # Every concrete Dataset has one publication DOI.
+        if hasattr(cls, "name") and not isinstance(getattr(cls, "doi", None), str):
+            msg = f"Dataset {cls.__name__} must define a DOI"
+            raise TypeError(msg)
+
         # Automatically compose docstrings for get() classmethod
-        if hasattr(cls, "get") and hasattr(cls, "name") and hasattr(cls, "doi"):
+        if hasattr(cls, "get") and hasattr(cls, "name"):
             # Get the underlying function of the classmethod
             get_func = cls.get.__func__
             # Get the first line of the class docstring for the summary
             class_doc = cls.__doc__ or ""
             doc_lines = class_doc.strip().split("\n") if class_doc.strip() else []
             summary_line = doc_lines[0] if doc_lines else ""
-            # Construct DOI line from cls.doi attribute
-            doi_url = f"https://doi.org/{cls.doi}"
-            doi_cli_line = f"DOI: {doi_url}"
+            doi_cli_line = f"DOI: https://doi.org/{cls.doi}"
             # Format prefix with class attributes
             prefix = BaseDataset._get_doc_prefix.format(name=cls.name.upper(), doi=cls.doi)
             # If class has a docstring with a summary, replace the first line of prefix
@@ -185,22 +188,26 @@ output_format : str
                 self._verify_sofa_convention(output_path)
             return output_path
 
-        direct_sofa_url = self.direct_sofa_url(source_filename)
         if sofa_path.exists():
             logger.info(f"Cache hit: {sofa_path}.")
-        elif direct_sofa_url is not None:
-            provider_artifact = self.download(provider_dir, direct_sofa_url=direct_sofa_url)
-            _link_or_copy(provider_artifact, sofa_path)
         else:
-            if ingest_path.exists():
-                logger.info(f"Ingestible file already exists at {ingest_path}, skipping download and processing.")
-                ingest_artifact = ingest_path
+            direct_sofa_hash = self.direct_sofa_hash(source_filename)
+            direct_sofa_url = self.direct_sofa_url(source_filename) if direct_sofa_hash is not None else None
+            if direct_sofa_url is not None:
+                provider_artifact = self.download(
+                    provider_dir, direct_sofa_url=direct_sofa_url, direct_sofa_hash=direct_sofa_hash
+                )
+                _link_or_copy(provider_artifact, sofa_path)
             else:
-                provider_artifact = self.download(provider_dir, **dataset_kwargs)
-                ingest_artifact = self.process(provider_artifact, ingest_path, **dataset_kwargs)
-            logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
-            with logger.spin(f"Writing SOFA {sofa_path.name}..."):
-                self._ingest(ingest_artifact, sofa_path, **dataset_kwargs)
+                if ingest_path.exists():
+                    logger.info(f"Ingestible file already exists at {ingest_path}, skipping download and processing.")
+                    ingest_artifact = ingest_path
+                else:
+                    provider_artifact = self.download(provider_dir, **dataset_kwargs)
+                    ingest_artifact = self.process(provider_artifact, ingest_path, **dataset_kwargs)
+                logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
+                with logger.spin(f"Writing SOFA {sofa_path.name}..."):
+                    self._ingest(ingest_artifact, sofa_path, **dataset_kwargs)
         with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
             self._verify_sofa_convention(sofa_path)
 
@@ -268,21 +275,20 @@ output_format : str
             "FABIAN_HRIR_measured_HATO_0.sofa").
         """
 
-    def direct_sofa_url(self, _source_filename: str) -> str | None:
-        """Return a direct SOFA URL for non-raw retrieval, if available."""
+    def direct_sofa_hash(self, _source_filename: str) -> str | None:
+        """Return a checked-in digest for a direct SOFA artifact, if available."""
         return None
 
-    def _download_direct_sofa(self, provider_dir: Path, url: str) -> Path:
+    def direct_sofa_url(self, _source_filename: str) -> str | None:
+        """Resolve a direct SOFA URL for non-raw retrieval, if available."""
+        return None
+
+    def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str) -> Path:
         """Download one hash-verified direct SOFA artifact."""
         filename = Path(urlparse(url).path).name
         if Path(filename).suffix.lower() != ".sofa":
             msg = f"Direct SOFA URL must name a .sofa file: {url!r}"
             raise ValueError(msg)
-        try:
-            known_hash = load_hash_registry("direct_sofa")[url]
-        except KeyError as error:
-            msg = f"Missing direct SOFA hash registry entry for {url!r}"
-            raise ValueError(msg) from error
         pup = _pooch_from_static_registry(
             path=provider_dir,
             registry={filename: known_hash},
@@ -291,7 +297,14 @@ output_format : str
         _fetch(pup, filename)
         return provider_dir / filename
 
-    def download(self, provider_dir: Path, *, direct_sofa_url: str | None = None, **dataset_kwargs) -> Path:
+    def download(
+        self,
+        provider_dir: Path,
+        *,
+        direct_sofa_url: str | None = None,
+        direct_sofa_hash: str | None = None,
+        **dataset_kwargs,
+    ) -> Path:
         """Download raw or direct-SOFA files and return the primary artifact.
 
         This method wraps _download to enforce provider_dir existence for all subclasses.
@@ -312,7 +325,10 @@ output_format : str
         """
         provider_dir.mkdir(exist_ok=True, parents=True)
         if direct_sofa_url is not None:
-            return self._download_direct_sofa(provider_dir, direct_sofa_url)
+            if direct_sofa_hash is None:
+                msg = f"Missing direct SOFA hash for {direct_sofa_url!r}"
+                raise ValueError(msg)
+            return self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
         return self._download(provider_dir, **dataset_kwargs)
 
     @abstractmethod

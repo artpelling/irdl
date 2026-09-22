@@ -26,6 +26,13 @@ class TestBaseDatasetAbstract:
         }
         assert BaseDataset.__abstractmethods__ == expected_abstract
 
+    def test_dataset_requires_doi(self):
+        """Reject concrete Dataset definitions without a DOI."""
+        with pytest.raises(TypeError, match="must define a DOI"):
+
+            class MissingDoiDataset(BaseDataset):
+                name = "missing-doi"
+
 
 class TestBaseDatasetHelpers:
     """Tests for shared BaseDataset helper behavior."""
@@ -109,14 +116,19 @@ class TestDirectSofaProvider:
                 msg = "DOI download must only serve raw requests"
                 raise AssertionError(msg)
 
+            def direct_sofa_hash(self, source_filename: str):
+                assert source_filename == "canonical.h5"
+                return "sha256:known"
+
             def direct_sofa_url(self, source_filename: str):
                 assert source_filename == "canonical.h5"
                 return "https://example.invalid/alternate.sofa"
 
         dataset = DirectSofaDataset()
 
-        def download_direct(provider_dir: Path, url: str) -> Path:
+        def download_direct(provider_dir: Path, url: str, known_hash: str) -> Path:
             assert url == "https://example.invalid/alternate.sofa"
+            assert known_hash == "sha256:known"
             provider_dir.mkdir(parents=True, exist_ok=True)
             path = provider_dir / "alternate.sofa"
             sf.write_sofa(path, sofa_object)

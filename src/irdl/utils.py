@@ -25,7 +25,7 @@ def load_hash_registry(provider_name: str) -> dict[str, str]:
     Returns
     -------
     dict
-        Flat mapping of provider-relative paths to ``sha256:...`` digests.
+        Flat mapping of provider file identifiers to ``sha256:...`` digests.
     """
     resource = resources.files("irdl").joinpath("registry", f"{provider_name}_hashes.json")
     with resource.open("r", encoding="utf-8") as handle:
@@ -53,8 +53,8 @@ def _validate_hash_registry(provider_name: str, registry: object) -> None:
         msg = f"Hash registry '{provider_name}' must be a JSON object"
         raise TypeError(msg)
     for key, value in registry.items():
-        if not isinstance(key, str) or "/" not in key:
-            msg = f"Hash registry '{provider_name}' contains invalid path key: {key!r}"
+        if not isinstance(key, str) or not key or Path(key).is_absolute() or ".." in Path(key).parts:
+            msg = f"Hash registry '{provider_name}' contains invalid file key: {key!r}"
             raise ValueError(msg)
         if not isinstance(value, str) or not value.startswith("sha256:"):
             msg = f"Hash registry '{provider_name}' contains invalid digest for {key!r}: {value!r}"
