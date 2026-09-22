@@ -39,6 +39,8 @@ def test_ista_streaming_sofa_writer_produces_valid_checked_sofa(tmp_path):
         assert sofa.DateCreated == sofa.DateModified
         assert sofa.DateCreated != "2026-01-01 00:00:00"
         TinyChunkSrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1D", dataset_split=None)
+    with h5py.File(sofa_path) as sofa:
+        assert sofa.attrs["SourceDescription"].dtype.kind == "S"
 
 
 def test_sriracha_split_writer_streams_provider_files_to_sofa(tmp_path):

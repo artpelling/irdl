@@ -186,7 +186,7 @@ class IstaBaseDataset(BaseDataset):
         )
         sofa.ReceiverShortName = "GRAS 40PL-1 Short CCP"
         sofa.SourceShortName = "Loudspeaker"
-        sofa.SourceDescription = "Dynamic 2” cone loudspeaker in a cylindrical enclosure (100 Hz-16 kHz)"
+        sofa.SourceDescription = 'Dynamic 2" cone loudspeaker in a cylindrical enclosure (100 Hz-16 kHz)'
 
         sofa.createDimension("S", 21)
 
