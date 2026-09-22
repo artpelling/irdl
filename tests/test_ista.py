@@ -54,6 +54,28 @@ class TestMiracleProcessing:
 
         _assert_permissions_preserved(provider_artifact.stat().st_mode & 0o777, result)
 
+    def test_sofa_room_corners_are_relative_to_each_array(self, tmp_path):
+        """Write MIRACLE's chamber bounds in the local SOFA coordinate frame."""
+        dataset = MiracleDataset()
+        expected = {
+            "A1": ((-4.15, -3.0, -7.5355), (4.15, 4.4, 5.9645)),
+            "A2": ((-4.15, -3.0, -6.8), (4.15, 4.4, 6.7)),
+            "D1": ((-4.15, -3.0, -7.531), (4.15, 4.4, 5.969)),
+            "R2": ((-4.15, -3.0, -6.8), (4.15, 4.4, 6.7)),
+        }
+
+        for scenario, (corner_a, corner_b) in expected.items():
+            hdf5_path = tmp_path / f"{scenario}.h5"
+            sofa_path = tmp_path / f"{scenario}.sofa"
+            _write_ista_hdf5(hdf5_path, n_sources=1)
+
+            dataset._ingest(hdf5_path, sofa_path, scenario=scenario)
+
+            with h5py.File(sofa_path, "r") as sofa:
+                assert sofa.attrs["RoomType"].decode() == "shoebox"
+                np.testing.assert_allclose(sofa["RoomCornerA"][:], [corner_a])
+                np.testing.assert_allclose(sofa["RoomCornerB"][:], [corner_b])
+
 
 class TestSrirachaProcessing:
     """Tests for SRIRACHA-specific processing helpers."""

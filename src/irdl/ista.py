@@ -58,6 +58,7 @@ class IstaBaseDataset(BaseDataset):
                 receiver_position=np.asarray(hdf5["data/location/receiver"]),
                 sampling_rate=float(hdf5["metadata/sampling_rate"][()]),
             )
+            self._create_room_variables(sofa, **dataset_kwargs)
             data_ir = sofa.variables["Data.IR"]
             source = sofa.variables["SourcePosition"]
             temperature = sofa.variables["RoomTemperature"]
@@ -171,7 +172,6 @@ class IstaBaseDataset(BaseDataset):
         sofa.DatabaseName = self.name.upper()
         sofa.References = self.doi
         sofa.License = "CC BY-NC-SA 4.0"
-        sofa.RoomType = "shoebox"
         sofa.DateCreated = now
         sofa.DateModified = now
         sofa.AuthorContact = "a.pelling@tu-berlin.de"
@@ -205,10 +205,6 @@ class IstaBaseDataset(BaseDataset):
         listener_view = sofa.createVariable("ListenerView", "f8", ("M", "C"))
         listener_up = sofa.createVariable("ListenerUp", "f8", ("M", "C"))
         emitter = sofa.createVariable("EmitterPosition", "f8", ("E", "C", "I"))
-        room_volume = sofa.createVariable("RoomVolume", "f8", ("I",))
-        room_corner_a = sofa.createVariable("RoomCornerA", "f8", ("I", "C"))
-        room_corner_b = sofa.createVariable("RoomCornerB", "f8", ("I", "C"))
-        room_corners = sofa.createVariable("RoomCorners", "f8", ("I", "I"))
         measurement_date = sofa.createVariable("MeasurementDate", "f8", ("M",))
         speed = sofa.createVariable("SpeedOfSound", "f8", ("M", "I"))
         humidity = sofa.createVariable("Humidity", "f8", ("M", "I")) if has_humidity else None
@@ -226,9 +222,6 @@ class IstaBaseDataset(BaseDataset):
             variable.Units = "metre"
         temperature.Units = "kelvin"
         sampling_rate_var.Units = "hertz"
-        room_volume.Units = "cubic metre"
-        room_corners.Type = "cartesian"
-        room_corners.Units = "metre"
 
         receiver[:] = np.asarray(receiver_position)[:, :, np.newaxis]
         receiver_descriptions[:] = netCDF4.stringtochar(np.asarray(["GRAS 40PL-1 Short CCP"] * r, dtype="S21"))
@@ -242,10 +235,6 @@ class IstaBaseDataset(BaseDataset):
         source_view[:] = (1.0, 0.0, 0.0)
         source_up[:] = (0.0, 0.0, 1.0)
         emitter[:] = 0.0
-        room_volume[:] = self.room_volume
-        room_corner_a[:] = (0.0, 0.0, 0.0)
-        room_corner_b[:] = (1.0, 1.0, 1.0)
-        room_corners[:] = 0.0
         measurement_date[:] = self.measurement_date
         speed[:] = 0.0
         if humidity is not None:
@@ -290,7 +279,24 @@ class MiracleDataset(IstaBaseDataset):
     _category = DatasetCategory.ROOM_IMPULSE_RESPONSES
     # metadata needed for creation of sofa file
     room_volume = 830
+    room_type = "shoebox"
     measurement_date = 1697068800.0
+
+    def _create_room_variables(self, sofa: netCDF4.Dataset, **dataset_kwargs) -> None:
+        """Create MIRACLE's shoebox geometry in listener coordinates."""
+        array_z = {"A1": 7.5355, "A2": 6.8, "D1": 7.531, "R2": 6.8}[dataset_kwargs["scenario"]]
+        sofa.RoomType = self.room_type
+        room_volume = sofa.createVariable("RoomVolume", "f8", ("I",))
+        room_corner_a = sofa.createVariable("RoomCornerA", "f8", ("I", "C"))
+        room_corner_b = sofa.createVariable("RoomCornerB", "f8", ("I", "C"))
+        room_corners = sofa.createVariable("RoomCorners", "f8", ("I", "I"))
+        room_volume.Units = "cubic metre"
+        room_corners.Type = "cartesian"
+        room_corners.Units = "metre"
+        room_volume[:] = self.room_volume
+        room_corner_a[:] = (-4.15, -3.0, -array_z)
+        room_corner_b[:] = (4.15, 4.4, 13.5 - array_z)
+        room_corners[:] = 0.0
 
     @classmethod
     def get(
@@ -497,7 +503,24 @@ class SrirachaDataset(IstaBaseDataset):
         ("C4", (1, 1)),
     )
     room_volume = 73.5
+    room_type = "shoebox"
     measurement_date = 1755648000.0
+
+    def _create_room_variables(self, sofa: netCDF4.Dataset, **_dataset_kwargs) -> None:
+        """Create SRIRACHA's current shoebox metadata."""
+        sofa.RoomType = self.room_type
+        room_volume = sofa.createVariable("RoomVolume", "f8", ("I",))
+        room_volume.Units = "cubic metre"
+        room_volume[:] = self.room_volume
+        if self.room_type == "shoebox":
+            room_corner_a = sofa.createVariable("RoomCornerA", "f8", ("I", "C"))
+            room_corner_b = sofa.createVariable("RoomCornerB", "f8", ("I", "C"))
+            room_corners = sofa.createVariable("RoomCorners", "f8", ("I", "I"))
+            room_corners.Type = "cartesian"
+            room_corners.Units = "metre"
+            room_corner_a[:] = (0.0, 0.0, 0.0)
+            room_corner_b[:] = (1.0, 1.0, 1.0)
+            room_corners[:] = 0.0
 
     @classmethod
     def get(
@@ -672,6 +695,7 @@ class SrirachaDataset(IstaBaseDataset):
                 receiver_position=np.asarray(c1["data/location/receiver"]),
                 sampling_rate=float(c1["metadata/sampling_rate"][()]),
             )
+            self._create_room_variables(sofa, **dataset_kwargs)
             data_ir = sofa.variables["Data.IR"]
             source = sofa.variables["SourcePosition"]
             temperature = sofa.variables["RoomTemperature"]
