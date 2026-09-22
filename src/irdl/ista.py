@@ -230,10 +230,10 @@ class IstaBaseDataset(BaseDataset):
         sampling_rate_var[:] = sampling_rate
         delay[:] = 0.0
         listener[:] = 0.0
-        listener_view[:] = (1.0, 0.0, 0.0)
-        listener_up[:] = (0.0, 0.0, 1.0)
-        source_view[:] = (1.0, 0.0, 0.0)
-        source_up[:] = (0.0, 0.0, 1.0)
+        listener_view[:] = (0.0, 0.0, 1.0)
+        listener_up[:] = (0.0, 1.0, 0.0)
+        source_view[:] = (0.0, 0.0, -1.0)
+        source_up[:] = (0.0, 1.0, 0.0)
         emitter[:] = 0.0
         measurement_date[:] = self.measurement_date
         speed[:] = 0.0
