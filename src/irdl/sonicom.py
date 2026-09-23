@@ -6,6 +6,7 @@ Currently this module hosts CIPIC, dEchorate, and SADIE II.
 import json
 from functools import cache
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import urlparse
 from urllib.request import urlopen
 
@@ -136,6 +137,75 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
     def _source_filename(self, **dataset_kwargs) -> str:
         """Return the native SONICOM filename for the requested subject."""
         return f"subject_{dataset_kwargs['subject']:03d}.sofa"
+
+
+class AriDataset(SonicomBaseDataset, BaseDataset):
+    """Download HRTF and DTF SOFA files from the ARI database on SONICOM."""
+
+    name = "ari"
+    doi = "10.3758/APP.72.2.454"
+    _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
+    _database_ids: ClassVar = {"b": 14, "c": 16, "d": 18}
+    _subjects = frozenset(
+        filename.removeprefix("hrtf ").removesuffix(".sofa")
+        for filename in load_hash_registry("sonicom")
+        if filename.startswith(("hrtf b_nh", "hrtf c_nh", "hrtf d_nh"))
+    )
+
+    @classmethod
+    def get(
+        cls,
+        subject: str = "b_nh10",
+        kind: str = "hrtf",
+        cache_dir: str | Path | None = None,
+        export_dir: str | Path | None = None,
+        output_format: str = "pyfar",
+    ) -> dict | Path | None:
+        """
+        subject : str, optional
+            ARI subject identifier, for example 'b_nh10'. Default is 'b_nh10'.
+        kind : str, optional
+            File type: 'hrtf' or 'dtf'. Default is 'hrtf'.
+
+        Returns
+        -------
+        dict or Path
+            For 'pyfar' / 'numpy': dict of in-memory objects.
+            For 'sofa' / 'hdf5' / 'raw': Path to file on disk.
+        """  # noqa: D205, D403
+        return cls()._get(
+            subject=subject,
+            kind=kind,
+            cache_dir=cache_dir,
+            export_dir=export_dir,
+            output_format=output_format,
+        )
+
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the requested native SOFA file from SONICOM."""
+        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
+
+    def _validate_params(self, **dataset_kwargs) -> None:
+        """Validate the ARI subject identifier and file type."""
+        subject = dataset_kwargs["subject"]
+        kind = dataset_kwargs["kind"]
+        if subject not in self._subjects:
+            msg = f"subject must be one of {sorted(self._subjects)}"
+            raise ValueError(msg)
+        if kind not in ("hrtf", "dtf"):
+            msg = "kind must be either 'hrtf' or 'dtf'"
+            raise ValueError(msg)
+
+    def _source_filename(self, **dataset_kwargs) -> str:
+        """Return the native SONICOM filename for the requested ARI file."""
+        return f"{dataset_kwargs['kind']} {dataset_kwargs['subject']}.sofa"
+
+    def direct_sofa_url(self, source_filename: str) -> str | None:
+        """Resolve an ARI source filename through its series-specific manifest."""
+        if self.direct_sofa_hash(source_filename) is None:
+            return None
+        series = source_filename.split(" ", 1)[1][0]
+        return _sonicom_manifest(self._database_ids[series]).get(source_filename)
 
 
 class SadieDataset(SonicomBaseDataset, BaseDataset):
