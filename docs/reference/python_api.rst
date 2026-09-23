@@ -15,7 +15,6 @@ Dataset modules
    aalto
    akt
    base
-   dechorate
    esat
    iks
    ista

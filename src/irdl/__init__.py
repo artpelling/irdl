@@ -7,7 +7,7 @@ from .akt import BrasRs8Dataset as BrasRs8Dataset
 from .akt import FabianDataset as FabianDataset
 from .akt import HutubsDataset as HutubsDataset
 from .base import _get_dataset_classes as _get_dataset_classes
-from .dechorate import DechorateDataset as DechorateDataset
+from .sonicom import DechorateDataset as DechorateDataset
 from .esat import MyriadDataset as MyriadDataset
 from .ista import MiracleDataset as MiracleDataset
 from .iks import MirdDataset as MirdDataset
