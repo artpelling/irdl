@@ -8,13 +8,15 @@ import pytest
 
 from irdl import sonicom
 from irdl.akt import HutubsDataset
-from irdl.sonicom import CipicDataset, SadieDataset
+from irdl.sonicom import AriDataset, CipicDataset, SadieDataset
 from irdl.utils import load_hash_registry
 
 
 @pytest.mark.parametrize(
     ("dataset", "kwargs", "expected"),
     [
+        (AriDataset(), {"subject": "b_nh10", "kind": "hrtf"}, "hrtf b_nh10.sofa"),
+        (AriDataset(), {"subject": "d_nh1379", "kind": "dtf"}, "dtf d_nh1379.sofa"),
         (CipicDataset(), {"subject": 3}, "subject_003.sofa"),
         (CipicDataset(), {"subject": 165}, "subject_165.sofa"),
         (SadieDataset(), {"subject": "H3"}, "H3_48K_24bit_256tap_FIR_SOFA.sofa"),
@@ -29,6 +31,8 @@ def test_sonicom_source_filenames(dataset, kwargs, expected):
 @pytest.mark.parametrize(
     ("dataset", "kwargs", "message"),
     [
+        (AriDataset(), {"subject": "b_nh1", "kind": "hrtf"}, "subject must be one of"),
+        (AriDataset(), {"subject": "b_nh10", "kind": "hrirs"}, "kind must be either"),
         (CipicDataset(), {"subject": 1}, r"subject must be one of.*3.*165"),
         (CipicDataset(), {"subject": "003"}, r"subject must be one of.*3.*165"),
         (SadieDataset(), {"subject": "H1"}, "subject must be one of"),
@@ -58,6 +62,19 @@ def test_sonicom_manifest_resolves_current_url(monkeypatch):
     assert CipicDataset().direct_sofa_url("subject_003.sofa") == (
         "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa"
     )
+
+
+def test_ari_resolves_series_specific_manifest(monkeypatch):
+    """Resolve ARI files through the manifest for their B/C/D series."""
+    urls = {
+        14: {"hrtf b_nh10.sofa": "https://example.test/b"},
+        18: {"dtf d_nh1379.sofa": "https://example.test/d"},
+    }
+    monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda database_id: urls[database_id])
+    dataset = AriDataset()
+
+    assert dataset.direct_sofa_url("hrtf b_nh10.sofa") == "https://example.test/b"
+    assert dataset.direct_sofa_url("dtf d_nh1379.sofa") == "https://example.test/d"
 
 
 def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
