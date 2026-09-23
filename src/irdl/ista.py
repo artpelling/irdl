@@ -185,17 +185,15 @@ class IstaBaseDataset(BaseDataset):
             "(1.5 m x 1.5 m aluminium plate, Vogel's spiral, max spacing 1.47 m, 51.2 kHz sampling rate)"
         )
         sofa.ReceiverShortName = "GRAS 40PL-1 Short CCP"
+        sofa.ReceiverDescription = "GRAS 40PL-1 Short CCP"
         sofa.SourceShortName = "Loudspeaker"
         sofa.SourceDescription = 'Dynamic 2" cone loudspeaker in a cylindrical enclosure (100 Hz-16 kHz)'
-
-        sofa.createDimension("S", 21)
 
         sofa.createVariable("Data.IR", "f8", ("M", "R", "N", "E"), zlib=True, complevel=4)
         source = sofa.createVariable("SourcePosition", "f8", ("M", "C"))
         source_view = sofa.createVariable("SourceView", "f8", ("M", "C"))
         source_up = sofa.createVariable("SourceUp", "f8", ("M", "C"))
         receiver = sofa.createVariable("ReceiverPosition", "f8", ("R", "C", "I"))
-        receiver_descriptions = sofa.createVariable("ReceiverDescriptions", "S1", ("R", "S"))
         receiver_view = sofa.createVariable("ReceiverView", "f8", ("R", "C", "I"))
         receiver_up = sofa.createVariable("ReceiverUp", "f8", ("R", "C", "I"))
         temperature = sofa.createVariable("RoomTemperature", "f8", ("M",))
@@ -224,7 +222,6 @@ class IstaBaseDataset(BaseDataset):
         sampling_rate_var.Units = "hertz"
 
         receiver[:] = np.asarray(receiver_position)[:, :, np.newaxis]
-        receiver_descriptions[:] = netCDF4.stringtochar(np.asarray(["GRAS 40PL-1 Short CCP"] * r, dtype="S21"))
         receiver_view[:] = np.tile((1.0, 0.0, 0.0), (r, 1))[:, :, np.newaxis]
         receiver_up[:] = np.tile((0.0, 0.0, 1.0), (r, 1))[:, :, np.newaxis]
         sampling_rate_var[:] = sampling_rate

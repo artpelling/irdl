@@ -33,7 +33,8 @@ def test_ista_streaming_sofa_writer_produces_valid_checked_sofa(tmp_path):
         assert sofa.ListenerShortName == "Custom planar microphone array"
         assert sofa.ReceiverShortName == "GRAS 40PL-1 Short CCP"
         assert sofa.SourceShortName == "Loudspeaker"
-        assert sofa.variables["ReceiverDescriptions"].shape == (3, 21)
+        assert sofa.ReceiverDescription == "GRAS 40PL-1 Short CCP"
+        assert "ReceiverDescriptions" not in sofa.variables
         assert sofa.variables["ReceiverView"].shape == (3, 3, 1)
         assert sofa.variables["ReceiverUp"].shape == (3, 3, 1)
         assert sofa.DateCreated == sofa.DateModified
