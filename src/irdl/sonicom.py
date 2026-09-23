@@ -140,7 +140,7 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
 
 
 class AriDataset(SonicomBaseDataset, BaseDataset):
-    """Download HRTF and DTF SOFA files from the ARI database on SONICOM."""
+    """Download the ARI database from SONICOM."""
 
     name = "ari"
     doi = "10.3758/APP.72.2.454"
