@@ -1,0 +1,3 @@
+MIRD measurements are distributed as 764 MB ZIP archives. Each call converts every azimuth for sources at 1 m, 2 m, or both distances; the full matching archive is cached. The user selects T60 and a nominal linear-array spacing (3, 4, or 8 cm).
+
+The source archive does not include Cartesian microphone coordinates. IRDL derives a centred, linear eight-microphone array from the supplied inter-microphone spacings; this geometry is recorded in the generated SOFA file. By default, IRDL removes the additional delay recorded in each MAT file's ``simpar.int_delay``; set ``remove_delay=False`` to retain it.
