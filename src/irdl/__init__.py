@@ -7,12 +7,12 @@ from .akt import BrasRs8Dataset as BrasRs8Dataset
 from .akt import FabianDataset as FabianDataset
 from .akt import HutubsDataset as HutubsDataset
 from .base import _get_dataset_classes as _get_dataset_classes
-from .sonicom import DechorateDataset as DechorateDataset
 from .esat import MyriadDataset as MyriadDataset
-from .ista import MiracleDataset as MiracleDataset
 from .iks import MirdDataset as MirdDataset
+from .ista import MiracleDataset as MiracleDataset
 from .ista import SrirachaDataset as SrirachaDataset
 from .sonicom import CipicDataset as CipicDataset
+from .sonicom import DechorateDataset as DechorateDataset
 from .sonicom import SadieDataset as SadieDataset
 
 __all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
