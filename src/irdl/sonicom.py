@@ -67,7 +67,7 @@ class SonicomBaseDataset:
         """Resolve a SONICOM SOFA artifact and its optional pinned digest."""
         filename = Path(source_filename).with_suffix(".sofa").name
         url = _sonicom_manifest(self.sonicom_database_id).get(filename)
-        return (url, load_hash_registry("sonicom").get(filename)) if url is not None else (None, None)
+        return (url, load_hash_registry(self.name).get(filename)) if url is not None else (None, None)
 
     def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Download the requested native SOFA file from SONICOM."""
@@ -88,7 +88,7 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
     sonicom_database_id = 72
     _subjects = frozenset(
         int(filename.removeprefix("subject_").removesuffix(".sofa"))
-        for filename in load_hash_registry("sonicom")
+        for filename in load_hash_registry("cipic")
         if filename.startswith("subject_")
     )
 
@@ -138,7 +138,7 @@ class SadieDataset(SonicomBaseDataset, BaseDataset):
     sonicom_database_id = 92
     _subjects = frozenset(
         filename.split("_", 1)[0]
-        for filename in load_hash_registry("sonicom")
+        for filename in load_hash_registry("sadie")
         if filename.endswith("_48K_24bit_256tap_FIR_SOFA.sofa")
     )
 

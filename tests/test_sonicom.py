@@ -86,7 +86,7 @@ def test_cipic_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
     """Use the shared SONICOM download implementation for native datasets."""
     direct_sofa = (
         "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa",
-        load_hash_registry("sonicom")["subject_003.sofa"],
+        load_hash_registry("cipic")["subject_003.sofa"],
     )
     dataset = CipicDataset()
     calls = []
@@ -117,8 +117,9 @@ def test_hutubs_raw_download_uses_canonical_zip(monkeypatch, tmp_path):
     assert calls == [tmp_path]
 
 
-def test_sonicom_hashes_are_keyed_by_source_filename():
-    """Pin content by scenario filename rather than mutable endpoint URL."""
-    hashes = load_hash_registry("sonicom")
+@pytest.mark.parametrize("dataset_name", ["cipic", "sadie", "hutubs", "dechorate", "miracle"])
+def test_dataset_hashes_are_keyed_by_source_filename(dataset_name):
+    """Keep each Dataset's content pins separate from mutable endpoint URLs."""
+    hashes = load_hash_registry(dataset_name)
     assert hashes
     assert all(Path(filename).name == filename for filename in hashes)
