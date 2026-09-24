@@ -63,8 +63,8 @@ class BaseDataset(ABC):
         Validate dataset-specific parameters (including output_format).
     _source_filename(**dataset_kwargs) -> str
         Construct the raw input filename with extension.
-    direct_sofa_url(source_filename) -> str | None
-        Optionally locate a direct SOFA source for non-raw retrieval.
+    _direct_sofa(source_filename) -> (url, digest)
+        Optionally locate a direct SOFA source and its optional pinned digest for non-raw retrieval.
     _download(**dataset_kwargs) -> Path
         Download and return Path to raw file.
     _process(provider_artifact: Path, ingest_path: Path, **_dataset_kwargs) -> Path:
@@ -191,14 +191,12 @@ output_format : str
         if sofa_path.exists():
             logger.info(f"Cache hit: {sofa_path}.")
         else:
-            direct_sofa_hash = self.direct_sofa_hash(source_filename)
-            direct_sofa_url = self.direct_sofa_url(source_filename) if direct_sofa_hash is not None else None
+            direct_sofa_url, direct_sofa_hash = self._direct_sofa(source_filename)
             if direct_sofa_url is not None:
-                provider_artifact = self.download(
-                    provider_dir, direct_sofa_url=direct_sofa_url, direct_sofa_hash=direct_sofa_hash
-                )
+                provider_artifact = self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
                 _link_or_copy(provider_artifact, sofa_path)
             else:
+                logger.info(f"No direct SOFA available for {source_filename}; using canonical provider artifact.")
                 if ingest_path.exists():
                     logger.info(f"Ingestible file already exists at {ingest_path}, skipping download and processing.")
                     ingest_artifact = ingest_path
@@ -275,16 +273,15 @@ output_format : str
             "FABIAN_HRIR_measured_HATO_0.sofa").
         """
 
-    def direct_sofa_hash(self, _source_filename: str) -> str | None:
-        """Return a checked-in digest for a direct SOFA artifact, if available."""
-        return None
+    def _direct_sofa(self, _source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
+        """Return a direct SOFA URL and optional pinned digest for non-raw retrieval."""
+        return None, None
 
-    def direct_sofa_url(self, _source_filename: str) -> str | None:
-        """Resolve a direct SOFA URL for non-raw retrieval, if available."""
-        return None
-
-    def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str) -> Path:
-        """Download one hash-verified direct SOFA artifact."""
+    def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str | None) -> Path:
+        """Download one direct SOFA artifact, verifying it when a digest is available."""
+        provider_dir.mkdir(exist_ok=True, parents=True)
+        if known_hash is None:
+            logger.warning(f"No digest for direct SOFA {url}; skipping integrity verification.")
         filename = Path(urlparse(url).path).name
         if Path(filename).suffix.lower() != ".sofa":
             msg = f"Direct SOFA URL must name a .sofa file: {url!r}"
@@ -297,15 +294,8 @@ output_format : str
         _fetch(pup, filename)
         return provider_dir / filename
 
-    def download(
-        self,
-        provider_dir: Path,
-        *,
-        direct_sofa_url: str | None = None,
-        direct_sofa_hash: str | None = None,
-        **dataset_kwargs,
-    ) -> Path:
-        """Download raw or direct-SOFA files and return the primary artifact.
+    def download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the canonical provider artifact and return it.
 
         This method wraps _download to enforce provider_dir existence for all subclasses.
 
@@ -324,11 +314,6 @@ output_format : str
             Path to the downloaded artifact on disk (file or directory).
         """
         provider_dir.mkdir(exist_ok=True, parents=True)
-        if direct_sofa_url is not None:
-            if direct_sofa_hash is None:
-                msg = f"Missing direct SOFA hash for {direct_sofa_url!r}"
-                raise ValueError(msg)
-            return self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
         return self._download(provider_dir, **dataset_kwargs)
 
     @abstractmethod

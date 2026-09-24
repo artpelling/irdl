@@ -99,7 +99,8 @@ class TestBaseDatasetHelpers:
 class TestDirectSofaProvider:
     """Tests for optional direct-SOFA retrieval."""
 
-    def test_non_raw_uses_direct_sofa_without_ingest(self, monkeypatch, sofa_object, tmp_path):
+    @pytest.mark.parametrize("expected_hash", ["sha256:known", None])
+    def test_non_raw_uses_direct_sofa_without_ingest(self, monkeypatch, sofa_object, tmp_path, expected_hash):
         """Direct SOFA bypasses the DOI download and ingest stage."""
 
         class DirectSofaDataset(BaseDataset):
@@ -116,19 +117,15 @@ class TestDirectSofaProvider:
                 msg = "DOI download must only serve raw requests"
                 raise AssertionError(msg)
 
-            def direct_sofa_hash(self, source_filename: str):
+            def _direct_sofa(self, source_filename: str):
                 assert source_filename == "canonical.h5"
-                return "sha256:known"
-
-            def direct_sofa_url(self, source_filename: str):
-                assert source_filename == "canonical.h5"
-                return "https://example.invalid/alternate.sofa"
+                return "https://example.invalid/alternate.sofa", expected_hash
 
         dataset = DirectSofaDataset()
 
-        def download_direct(provider_dir: Path, url: str, known_hash: str) -> Path:
+        def download_direct(provider_dir: Path, url: str, known_hash: str | None) -> Path:
             assert url == "https://example.invalid/alternate.sofa"
-            assert known_hash == "sha256:known"
+            assert known_hash == expected_hash
             provider_dir.mkdir(parents=True, exist_ok=True)
             path = provider_dir / "alternate.sofa"
             sf.write_sofa(path, sofa_object)
@@ -142,6 +139,28 @@ class TestDirectSofaProvider:
         assert result.exists()
         assert (tmp_path / "DIRECT" / "provider" / "alternate.sofa").exists()
         assert not (tmp_path / "DIRECT" / "ingest").exists()
+
+    def test_non_raw_logs_canonical_fallback(self, caplog, sofa_object, tmp_path):
+        """Log when no direct SOFA is available."""
+
+        class CanonicalSofaDataset(BaseDataset):
+            name = "canonical"
+            doi = "10.0000/canonical"
+
+            def _validate_params(self, **_dataset_kwargs):
+                pass
+
+            def _source_filename(self, **_dataset_kwargs):
+                return "canonical.sofa"
+
+            def _download(self, provider_dir: Path, **_dataset_kwargs):
+                path = provider_dir / "canonical.sofa"
+                sf.write_sofa(path, sofa_object)
+                return path
+
+        CanonicalSofaDataset()._get(cache_dir=tmp_path, export_dir=None, output_format="sofa")
+
+        assert any("No direct SOFA available for canonical.sofa" in message for message in caplog.messages)
 
 
 class TestIstaBaseDatasetAbstract:

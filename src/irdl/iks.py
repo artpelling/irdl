@@ -95,7 +95,7 @@ class MirdDataset(BaseDataset):
         logger.info(f"Downloading MIRD archive {archive}")
         pooch = _pooch_from_static_registry(
             path=provider_dir,
-            registry={archive: load_hash_registry("mird")[archive]},
+            registry={archive: load_hash_registry(self.name)[archive]},
             urls={archive: f"{self._download_root}/{archive}"},
         )
         _fetch(pooch, archive)

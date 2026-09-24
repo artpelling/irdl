@@ -6,6 +6,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 
+from irdl import sonicom
 from irdl.ista import MiracleDataset, SrirachaDataset
 
 
@@ -41,6 +42,23 @@ def _write_ista_hdf5(path: Path, *, n_sources: int, start: int = 0) -> None:
 
 class TestMiracleProcessing:
     """Tests for MIRACLE-specific processing helpers."""
+
+    def test_resolves_full_scenarios_from_sonicom(self, monkeypatch):
+        """Use SONICOM's native SOFA files except for artificial splits."""
+        urls = {
+            "A1.sofa": "https://ecosystem.sonicom.eu/data/98/28532/62248/A1.sofa",
+            "A2.sofa": "https://ecosystem.sonicom.eu/data/98/28533/62249/A2.sofa",
+            "D1.sofa": "https://ecosystem.sonicom.eu/data/98/28534/62250/D1.sofa",
+            "R2.sofa": "https://ecosystem.sonicom.eu/data/98/28535/62251/R2.sofa",
+        }
+        monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: urls)
+        dataset = MiracleDataset()
+
+        for scenario, url in urls.items():
+            direct_sofa = dataset._direct_sofa(f"{scenario.removesuffix('.sofa')}.h5")
+            assert direct_sofa[0] == url
+            assert direct_sofa[1] is not None
+        assert dataset._direct_sofa("A1-C1.h5") == (None, None)
 
     def test_extract_split_preserves_permissions(self, tmp_path):
         """Verify extracted split files reuse the source file's permission bits."""

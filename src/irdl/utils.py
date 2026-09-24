@@ -13,34 +13,34 @@ from irdl.logging import logger
 
 
 @cache
-def load_hash_registry(provider_name: str) -> dict[str, str]:
-    """Load and validate a packaged provider hash registry.
+def load_hash_registry(dataset_name: str) -> dict[str, str]:
+    """Load and validate a packaged Dataset hash registry.
 
     Parameters
     ----------
-    provider_name : str
-        Provider identifier used to resolve ``<provider_name>_hashes.json`` from
-        ``irdl/registry/`` package data.
+    dataset_name : str
+        Canonical lowercase Dataset name used to resolve ``<dataset_name>.json``
+        from ``irdl/registry/`` package data.
 
     Returns
     -------
     dict
         Flat mapping of provider file identifiers to ``sha256:...`` digests.
     """
-    resource = resources.files("irdl").joinpath("registry", f"{provider_name}_hashes.json")
+    resource = resources.files("irdl").joinpath("registry", f"{dataset_name}.json")
     with resource.open("r", encoding="utf-8") as handle:
         registry = json.load(handle)
-    _validate_hash_registry(provider_name, registry)
+    _validate_hash_registry(dataset_name, registry)
     return registry
 
 
-def _validate_hash_registry(provider_name: str, registry: object) -> None:
+def _validate_hash_registry(dataset_name: str, registry: object) -> None:
     """Validate the common flat hash-registry schema.
 
     Parameters
     ----------
-    provider_name : str
-        Provider identifier used in error messages.
+    dataset_name : str
+        Dataset identifier used in error messages.
     registry : object
         Parsed JSON payload to validate.
 
@@ -50,14 +50,14 @@ def _validate_hash_registry(provider_name: str, registry: object) -> None:
         If the registry does not match the required flat ``dict[str, str]`` schema.
     """
     if not isinstance(registry, dict):
-        msg = f"Hash registry '{provider_name}' must be a JSON object"
+        msg = f"Hash registry '{dataset_name}' must be a JSON object"
         raise TypeError(msg)
     for key, value in registry.items():
         if not isinstance(key, str) or not key or Path(key).is_absolute() or ".." in Path(key).parts:
-            msg = f"Hash registry '{provider_name}' contains invalid file key: {key!r}"
+            msg = f"Hash registry '{dataset_name}' contains invalid file key: {key!r}"
             raise ValueError(msg)
         if not isinstance(value, str) or not value.startswith("sha256:"):
-            msg = f"Hash registry '{provider_name}' contains invalid digest for {key!r}: {value!r}"
+            msg = f"Hash registry '{dataset_name}' contains invalid digest for {key!r}: {value!r}"
             raise ValueError(msg)
 
 

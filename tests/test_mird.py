@@ -39,7 +39,7 @@ def test_mird_rejects_unknown_selectors(parameter, value):
 
 def test_mird_has_hashes_for_every_provider_archive():
     """Pin all three T60 and three spacing archives."""
-    hashes = load_hash_registry("mird")
+    hashes = load_hash_registry(MirdDataset.name)
     assert len(hashes) == len(MirdDataset._t60s) * len(MirdDataset._spacings)
     assert all(filename.endswith(".zip") for filename in hashes)
 
