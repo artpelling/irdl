@@ -63,14 +63,9 @@ class SonicomBaseDataset:
 
     sonicom_database_id: int
 
-    @staticmethod
-    def _sonicom_sofa_filename(source_filename: str) -> str:
-        """Map an ingest filename to its SONICOM SOFA filename."""
-        return Path(source_filename).with_suffix(".sofa").name
-
     def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
         """Resolve a hash-pinned SONICOM SOFA artifact through its live manifest."""
-        filename = self._sonicom_sofa_filename(source_filename)
+        filename = Path(source_filename).with_suffix(".sofa").name
         known_hash = load_hash_registry("sonicom").get(filename)
         if known_hash is None:
             return None, None
