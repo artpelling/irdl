@@ -55,9 +55,9 @@ def test_sonicom_manifest_resolves_current_url(monkeypatch):
     monkeypatch.setattr(sonicom, "urlopen", lambda _url: io.BytesIO(json.dumps(payload).encode()))
     sonicom._sonicom_manifest.cache_clear()
 
-    assert CipicDataset().direct_sofa_url("subject_003.sofa") == (
-        "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa"
-    )
+    direct_sofa = CipicDataset()._direct_sofa("subject_003.sofa")
+    assert direct_sofa[0] == "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa"
+    assert direct_sofa[1] is not None
 
 
 def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
@@ -68,29 +68,34 @@ def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
     }
     monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: urls)
     dataset = HutubsDataset()
-    assert dataset.direct_sofa_url("pp1_HRIRs_measured.sofa") == urls["pp1_HRIRs_measured.sofa"]
-    assert dataset.direct_sofa_url("pp96_HRIRs_simulated.sofa") == urls["pp96_HRIRs_simulated.sofa"]
+    assert dataset._direct_sofa("pp1_HRIRs_measured.sofa")[0] == urls["pp1_HRIRs_measured.sofa"]
+    assert dataset._direct_sofa("pp96_HRIRs_simulated.sofa")[0] == urls["pp96_HRIRs_simulated.sofa"]
 
 
-def test_hutubs_non_raw_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
-    """Bypass the HUTUBS ZIP for normal retrieval."""
-    url = "https://ecosystem.sonicom.eu/data/76/25558/49581/pp7_HRIRs_simulated.sofa"
+def test_sonicom_returns_an_empty_pair_for_an_unpinned_file():
+    """Do not resolve SONICOM artifacts without a pinned digest."""
+    assert CipicDataset()._direct_sofa("unregistered.sofa") == (None, None)
+
+
+def test_hutubs_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
+    """Download only the selected native SOFA file."""
+    direct_sofa = (
+        "https://ecosystem.sonicom.eu/data/76/25558/49581/pp7_HRIRs_simulated.sofa",
+        load_hash_registry("sonicom")["pp7_HRIRs_simulated.sofa"],
+    )
     dataset = HutubsDataset()
     calls = []
 
-    def download_direct(provider_dir: Path, direct_url: str, known_hash: str) -> Path:
-        calls.append((direct_url, known_hash))
-        return provider_dir / Path(direct_url).name
+    def download_direct(provider_dir: Path, url: str, known_hash: str) -> Path:
+        calls.append((url, known_hash))
+        return provider_dir / Path(url).name
 
+    monkeypatch.setattr(dataset, "_direct_sofa", lambda _filename: direct_sofa)
     monkeypatch.setattr(dataset, "_download_direct_sofa", download_direct)
-    result = dataset.download(
-        tmp_path,
-        direct_sofa_url=url,
-        direct_sofa_hash=dataset.direct_sofa_hash("pp7_HRIRs_simulated.sofa"),
-    )
+    result = dataset._download_sonicom_sofa(tmp_path, subject=7, kind="simulated")
 
     assert result == tmp_path / "pp7_HRIRs_simulated.sofa"
-    assert calls == [(url, dataset.direct_sofa_hash("pp7_HRIRs_simulated.sofa"))]
+    assert calls == [direct_sofa]
 
 
 def test_sonicom_hashes_are_keyed_by_source_filename():

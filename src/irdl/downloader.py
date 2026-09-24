@@ -33,10 +33,10 @@ def _fetch(pup: po.Pooch, fname: str) -> str:
 
 def _pooch_from_static_registry(
     path: str | Path,
-    registry: Mapping[str, str],
+    registry: Mapping[str, str | None],
     urls: Mapping[str, str],
 ) -> po.Pooch:
-    """Create a Pooch instance for hash-verified direct downloads."""
+    """Create a Pooch instance for direct downloads with optional digests."""
     pup = po.create(path=path, base_url="", registry=dict(registry), urls=dict(urls), retry_if_failed=2)
     pup.file_sizes = {}
     return pup

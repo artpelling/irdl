@@ -20,7 +20,7 @@ def test_dechorate_source_filename_matches_sonicom_manifest():
     dataset = DechorateDataset()
     filename = "dEchorate_room011110_src4_arr2_mics6-10.sofa"
     assert dataset._source_filename(room_code="011110", source=4, array=2) == filename
-    assert dataset.direct_sofa_hash(filename)
+    assert dataset._direct_sofa(filename)[1] is not None
 
 
 def test_dechorate_resolves_sonicom_for_non_raw(monkeypatch):
@@ -28,7 +28,9 @@ def test_dechorate_resolves_sonicom_for_non_raw(monkeypatch):
     filename = "dEchorate_room000000_src1_arr1_mics1-5.sofa"
     url = f"https://ecosystem.sonicom.eu/data/74/1/{filename}"
     monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: {filename: url})
-    assert DechorateDataset().direct_sofa_url(filename) == url
+    direct_sofa = DechorateDataset()._direct_sofa(filename)
+    assert direct_sofa[0] == url
+    assert direct_sofa[1] is not None
 
 
 def test_dechorate_raw_downloads_only_zenodo_rirs(monkeypatch, tmp_path):

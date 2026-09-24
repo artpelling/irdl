@@ -17,6 +17,7 @@ import numpy as np
 from irdl.base import BaseDataset, DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
+from irdl.sonicom import SonicomBaseDataset
 from irdl.utils import _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4
@@ -255,8 +256,8 @@ def _canonical_array(data: np.ndarray, dtype: np.dtype) -> np.ndarray:
     return np.ascontiguousarray(array.astype(dtype, copy=False))
 
 
-class MiracleDataset(IstaBaseDataset):
-    """Download the MIRACLE database from DepositOnce.
+class MiracleDataset(SonicomBaseDataset, IstaBaseDataset):
+    """Download the MIRACLE database from DepositOnce/SONICOM.
 
     Attributes
     ----------
@@ -274,6 +275,7 @@ class MiracleDataset(IstaBaseDataset):
     name = "miracle"
     doi = "10.14279/depositonce-20837"
     _category = DatasetCategory.ROOM_IMPULSE_RESPONSES
+    sonicom_database_id = 98
     # metadata needed for creation of sofa file
     room_volume = 830
     room_type = "shoebox"

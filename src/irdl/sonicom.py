@@ -59,29 +59,32 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
 
 
 class SonicomBaseDataset:
-    """Resolve SONICOM URLs dynamically while pinning checked-in SOFA digests."""
+    """Resolve SONICOM SOFA URLs dynamically while pinning checked-in digests."""
 
     sonicom_database_id: int
 
-    def direct_sofa_hash(self, source_filename: str) -> str | None:
-        """Return the checked-in digest for a SONICOM SOFA filename."""
-        return load_hash_registry("sonicom").get(source_filename)
+    @staticmethod
+    def _sonicom_sofa_filename(source_filename: str) -> str:
+        """Map an ingest filename to its SONICOM SOFA filename."""
+        return Path(source_filename).with_suffix(".sofa").name
 
-    def direct_sofa_url(self, source_filename: str) -> str | None:
-        """Resolve a registered SONICOM SOFA filename through its live manifest."""
-        if self.direct_sofa_hash(source_filename) is None:
-            return None
-        return _sonicom_manifest(self.sonicom_database_id).get(source_filename)
+    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
+        """Resolve a hash-pinned SONICOM SOFA artifact through its live manifest."""
+        filename = self._sonicom_sofa_filename(source_filename)
+        known_hash = load_hash_registry("sonicom").get(filename)
+        if known_hash is None:
+            return None, None
+        url = _sonicom_manifest(self.sonicom_database_id).get(filename)
+        return (url, known_hash) if url is not None else (None, None)
 
     def _download_sonicom_sofa(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Download the requested native SOFA file from SONICOM."""
         source_filename = self._source_filename(**dataset_kwargs)
-        known_hash = self.direct_sofa_hash(source_filename)
-        url = self.direct_sofa_url(source_filename)
-        if url is None or known_hash is None:
-            msg = f"No SONICOM SOFA hash registered for {source_filename!r}"
-            raise ValueError(msg)
-        return self._download_direct_sofa(provider_dir, url, known_hash)
+        url, known_hash = self._direct_sofa(source_filename)
+        if url is not None:
+            return self._download_direct_sofa(provider_dir, url, known_hash)
+        msg = f"No SONICOM SOFA hash registered for {source_filename!r}"
+        raise ValueError(msg)
 
 
 class CipicDataset(SonicomBaseDataset, BaseDataset):
