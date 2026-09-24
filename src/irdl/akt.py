@@ -302,6 +302,10 @@ class HutubsDataset(SonicomBaseDataset, AKTZipBaseDataset):
             output_format=output_format,
         )
 
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the canonical HUTUBS ZIP for raw retrieval."""
+        return AKTZipBaseDataset._download(self, provider_dir, **dataset_kwargs)
+
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate HUTUBS-specific parameters."""
         subject = dataset_kwargs["subject"]

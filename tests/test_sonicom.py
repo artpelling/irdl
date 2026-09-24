@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from irdl import sonicom
-from irdl.akt import HutubsDataset
+from irdl.akt import AKTZipBaseDataset, HutubsDataset
 from irdl.sonicom import CipicDataset, SadieDataset
 from irdl.utils import load_hash_registry
 
@@ -72,18 +72,23 @@ def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
     assert dataset._direct_sofa("pp96_HRIRs_simulated.sofa")[0] == urls["pp96_HRIRs_simulated.sofa"]
 
 
-def test_sonicom_returns_an_empty_pair_for_an_unpinned_file():
-    """Do not resolve SONICOM artifacts without a pinned digest."""
-    assert CipicDataset()._direct_sofa("unregistered.sofa") == (None, None)
+def test_sonicom_resolves_an_unpinned_file(monkeypatch):
+    """Return a URL without a digest when the manifest has no pinned file."""
+    url = "https://ecosystem.sonicom.eu/data/72/1/unregistered.sofa"
+    monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: {"unregistered.sofa": url})
+    dataset = CipicDataset()
+
+    assert dataset._direct_sofa("unregistered.sofa") == (url, None)
+    assert dataset._direct_sofa("missing.sofa") == (None, None)
 
 
-def test_hutubs_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
-    """Download only the selected native SOFA file."""
+def test_cipic_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
+    """Use the shared SONICOM download implementation for native datasets."""
     direct_sofa = (
-        "https://ecosystem.sonicom.eu/data/76/25558/49581/pp7_HRIRs_simulated.sofa",
-        load_hash_registry("sonicom")["pp7_HRIRs_simulated.sofa"],
+        "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa",
+        load_hash_registry("sonicom")["subject_003.sofa"],
     )
-    dataset = HutubsDataset()
+    dataset = CipicDataset()
     calls = []
 
     def download_direct(provider_dir: Path, url: str, known_hash: str) -> Path:
@@ -92,10 +97,24 @@ def test_hutubs_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
 
     monkeypatch.setattr(dataset, "_direct_sofa", lambda _filename: direct_sofa)
     monkeypatch.setattr(dataset, "_download_direct_sofa", download_direct)
-    result = dataset._download_sonicom_sofa(tmp_path, subject=7, kind="simulated")
+    result = dataset._download(tmp_path, subject=3)
 
-    assert result == tmp_path / "pp7_HRIRs_simulated.sofa"
+    assert result == tmp_path / "subject_003.sofa"
     assert calls == [direct_sofa]
+
+
+def test_hutubs_raw_download_uses_canonical_zip(monkeypatch, tmp_path):
+    """Keep HUTUBS raw retrieval on its DepositOnce ZIP."""
+    expected = tmp_path / "HRIRs.zip"
+    calls = []
+
+    def download_zip(_dataset, provider_dir: Path, **_dataset_kwargs) -> Path:
+        calls.append(provider_dir)
+        return expected
+
+    monkeypatch.setattr(AKTZipBaseDataset, "_download", download_zip)
+    assert HutubsDataset()._download(tmp_path, subject=1, kind="measured") == expected
+    assert calls == [tmp_path]
 
 
 def test_sonicom_hashes_are_keyed_by_source_filename():

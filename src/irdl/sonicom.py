@@ -64,21 +64,18 @@ class SonicomBaseDataset:
     sonicom_database_id: int
 
     def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
-        """Resolve a hash-pinned SONICOM SOFA artifact through its live manifest."""
+        """Resolve a SONICOM SOFA artifact and its optional pinned digest."""
         filename = Path(source_filename).with_suffix(".sofa").name
-        known_hash = load_hash_registry("sonicom").get(filename)
-        if known_hash is None:
-            return None, None
         url = _sonicom_manifest(self.sonicom_database_id).get(filename)
-        return (url, known_hash) if url is not None else (None, None)
+        return (url, load_hash_registry("sonicom").get(filename)) if url is not None else (None, None)
 
-    def _download_sonicom_sofa(self, provider_dir: Path, **dataset_kwargs) -> Path:
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Download the requested native SOFA file from SONICOM."""
         source_filename = self._source_filename(**dataset_kwargs)
         url, known_hash = self._direct_sofa(source_filename)
         if url is not None:
             return self._download_direct_sofa(provider_dir, url, known_hash)
-        msg = f"No SONICOM SOFA hash registered for {source_filename!r}"
+        msg = f"No SONICOM SOFA available for {source_filename!r}"
         raise ValueError(msg)
 
 
@@ -119,10 +116,6 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
             export_dir=export_dir,
             output_format=output_format,
         )
-
-    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
-        """Download the requested native SOFA file from SONICOM."""
-        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
 
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate the CIPIC subject identifier."""
@@ -174,10 +167,6 @@ class SadieDataset(SonicomBaseDataset, BaseDataset):
             export_dir=export_dir,
             output_format=output_format,
         )
-
-    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
-        """Download the requested native SOFA file from SONICOM."""
-        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
 
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate the SADIE II listener or dummy-head identifier."""

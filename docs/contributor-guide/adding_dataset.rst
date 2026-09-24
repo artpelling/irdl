@@ -20,10 +20,11 @@ If the provider data is already SOFA-native, keep inheriting from
 :class:`~irdl.base.BaseDataset`. The default ``_ingest()`` promotes SOFA files directly
 without rewriting them.
 
-If a Provider resolves direct SOFA URLs through a server manifest, pin each source filename
-and SHA-256 digest in a Hash Registry; do not check in manifest URLs. The resolver must only
-return URLs for filenames that have a checked-in digest. This path serves non-raw retrieval
-only; ``output_format="raw"`` continues to download the Canonical Provider artifact.
+If a Provider resolves direct SOFA URLs through a server manifest, pin each available source
+filename and SHA-256 digest in a Hash Registry; do not check in manifest URLs. The resolver may
+return an unpinned URL, but IRDL warns that integrity verification is skipped. This path serves
+non-raw retrieval only; ``output_format="raw"`` continues to download the Canonical Provider
+artifact.
 
 Choose a module
 ----------------
