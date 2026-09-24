@@ -1,1 +1,0 @@
-"""Maintainer scripts for IRDL."""
