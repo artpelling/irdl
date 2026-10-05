@@ -9,11 +9,11 @@ from .akt import HutubsDataset as HutubsDataset
 from .base import _get_dataset_classes as _get_dataset_classes
 from .esat import MyriadDataset as MyriadDataset
 from .iks import MirdDataset as MirdDataset
+from .inria import DechorateDataset as DechorateDataset
 from .ista import MiracleDataset as MiracleDataset
 from .ista import SrirachaDataset as SrirachaDataset
 from .sonicom import AriDataset as AriDataset
 from .sonicom import CipicDataset as CipicDataset
-from .sonicom import DechorateDataset as DechorateDataset
 from .sonicom import SadieDataset as SadieDataset
 
 __all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
