@@ -8,13 +8,15 @@ import pytest
 
 from irdl import sonicom
 from irdl.akt import AKTZipBaseDataset, HutubsDataset
-from irdl.sonicom import CipicDataset, SadieDataset
+from irdl.sonicom import AriDataset, CipicDataset, SadieDataset
 from irdl.utils import load_hash_registry
 
 
 @pytest.mark.parametrize(
     ("dataset", "kwargs", "expected"),
     [
+        (AriDataset(), {"subject": "b_nh10", "kind": "hrtf"}, "hrtf b_nh10.sofa"),
+        (AriDataset(), {"subject": "d_nh1379", "kind": "dtf"}, "dtf d_nh1379.sofa"),
         (CipicDataset(), {"subject": 3}, "subject_003.sofa"),
         (CipicDataset(), {"subject": 165}, "subject_165.sofa"),
         (SadieDataset(), {"subject": "H3"}, "H3_48K_24bit_256tap_FIR_SOFA.sofa"),
@@ -29,6 +31,8 @@ def test_sonicom_source_filenames(dataset, kwargs, expected):
 @pytest.mark.parametrize(
     ("dataset", "kwargs", "message"),
     [
+        (AriDataset(), {"subject": "b_nh1", "kind": "hrtf"}, "subject must be one of"),
+        (AriDataset(), {"subject": "b_nh10", "kind": "hrirs"}, "kind must be either"),
         (CipicDataset(), {"subject": 1}, r"subject must be one of.*3.*165"),
         (CipicDataset(), {"subject": "003"}, r"subject must be one of.*3.*165"),
         (SadieDataset(), {"subject": "H1"}, "subject must be one of"),
@@ -58,6 +62,34 @@ def test_sonicom_manifest_resolves_current_url(monkeypatch):
     direct_sofa = CipicDataset()._direct_sofa("subject_003.sofa")
     assert direct_sofa[0] == "https://ecosystem.sonicom.eu/data/72/25340/48753/subject_003.sofa"
     assert direct_sofa[1] is not None
+
+
+def test_sonicom_manifest_rejects_duplicate_filenames(monkeypatch):
+    """Do not silently overwrite ambiguous provider filenames and their URLs."""
+    payload = {
+        "data": [
+            {"Datafile Name": "generic.sofa", "Datafile URL": f"https://ecosystem.sonicom.eu/data/18/{i}/generic.sofa"}
+            for i in (1, 2)
+        ]
+    }
+    monkeypatch.setattr(sonicom, "urlopen", lambda _url: io.BytesIO(json.dumps(payload).encode()))
+    sonicom._sonicom_manifest.cache_clear()
+    with pytest.raises(ValueError, match=r"Duplicate SONICOM filename 'generic\.sofa'"):
+        sonicom._sonicom_manifest(18)
+
+
+def test_ari_resolves_series_specific_manifest(monkeypatch):
+    """Resolve ARI files through the manifest for their B/C/D series."""
+    urls = {
+        14: {"hrtf b_nh10.sofa": "https://example.test/b"},
+        18: {"dtf d_nh1379.sofa": "https://example.test/d"},
+    }
+    monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda database_id: urls[database_id])
+    dataset = AriDataset()
+
+    hashes = load_hash_registry("ari")
+    assert dataset._direct_sofa("hrtf b_nh10.sofa") == ("https://example.test/b", hashes["hrtf b_nh10.sofa"])
+    assert dataset._direct_sofa("dtf d_nh1379.sofa") == ("https://example.test/d", hashes["dtf d_nh1379.sofa"])
 
 
 def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
@@ -117,7 +149,7 @@ def test_hutubs_raw_download_uses_canonical_zip(monkeypatch, tmp_path):
     assert calls == [tmp_path]
 
 
-@pytest.mark.parametrize("dataset_name", ["cipic", "sadie", "hutubs", "dechorate", "miracle"])
+@pytest.mark.parametrize("dataset_name", ["ari", "cipic", "sadie", "hutubs", "dechorate", "miracle"])
 def test_dataset_hashes_are_keyed_by_source_filename(dataset_name):
     """Keep each Dataset's content pins separate from mutable endpoint URLs."""
     hashes = load_hash_registry(dataset_name)

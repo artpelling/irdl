@@ -11,6 +11,7 @@ from .esat import MyriadDataset as MyriadDataset
 from .iks import MirdDataset as MirdDataset
 from .ista import MiracleDataset as MiracleDataset
 from .ista import SrirachaDataset as SrirachaDataset
+from .sonicom import AriDataset as AriDataset
 from .sonicom import CipicDataset as CipicDataset
 from .sonicom import DechorateDataset as DechorateDataset
 from .sonicom import SadieDataset as SadieDataset
