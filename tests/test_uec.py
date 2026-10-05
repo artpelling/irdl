@@ -17,8 +17,9 @@ def _write_meshgrid_hdf5(path):
     with h5py.File(path, "w") as hdf5:
         hdf5.create_dataset("rir", data=responses)
         hdf5.create_dataset("grid", data=grid)
-        hdf5.attrs["fs"] = np.float32(_SAMPLING_RATE)
-        hdf5.attrs["c"] = np.float32(343)
+        # MATLAB stores scalar attributes as one-element HDF5 arrays.
+        hdf5.attrs["fs"] = np.array([_SAMPLING_RATE], dtype=np.float32)
+        hdf5.attrs["c"] = np.array([343], dtype=np.float32)
         hdf5.attrs["sp_pos"] = np.array([5.54, 0.94, 1.42], dtype=np.float32)
         hdf5.attrs["room_size"] = np.array([8.4, 6.14, 2.66], dtype=np.float32)
     return responses, grid.T

@@ -104,8 +104,8 @@ class Meshgrid3dDataset(IstaBaseDataset):
 
             measurements, samples = rir.shape
             grid_positions = np.asarray(grid, dtype=float).T
-            sampling_rate = float(hdf5.attrs["fs"])
-            speed_of_sound = float(hdf5.attrs["c"])
+            sampling_rate = float(np.asarray(hdf5.attrs["fs"]).item())
+            speed_of_sound = float(np.asarray(hdf5.attrs["c"]).item())
             logger.info(f"Streaming {measurements} grid positions with {samples} samples to SOFA {sofa_path}.")
             with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
                 self._create_default_variables(
