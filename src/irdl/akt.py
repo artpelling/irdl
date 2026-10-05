@@ -179,8 +179,8 @@ class BrasRs8Dataset(AKTZipBaseDataset):
         return f"RS8_RIRs_{scene}.sofa"
 
 
-class FabianDataset(AKTZipBaseDataset):
-    """Download and extract the FABIAN HRTF database from DepositOnce.
+class FabianDataset(SonicomBaseDataset, AKTZipBaseDataset):
+    """Download the FABIAN HRTF database from DepositOnce/SONICOM.
 
     Attributes
     ----------
@@ -194,6 +194,7 @@ class FabianDataset(AKTZipBaseDataset):
     doi = "10.14279/depositonce-5718.5"
     _category = DatasetCategory.HEAD_RELATED_IMPULSE_RESPONSES
     _zipfile = "FABIAN_HRTF_DATABASE_v4.zip"
+    sonicom_database_id = 101
 
     @classmethod
     def get(
@@ -224,6 +225,14 @@ class FabianDataset(AKTZipBaseDataset):
             export_dir=export_dir,
             output_format=output_format,
         )
+
+    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
+        """Download the canonical FABIAN ZIP for raw retrieval."""
+        return AKTZipBaseDataset._download(self, provider_dir, **dataset_kwargs)
+
+    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
+        """Resolve FABIAN's SONICOM name for simulated HRTFs."""
+        return super()._direct_sofa(source_filename.replace("_simulated_", "_modeled_"))
 
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate FABIAN-specific parameters.

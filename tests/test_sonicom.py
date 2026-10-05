@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from irdl import sonicom
-from irdl.akt import AKTZipBaseDataset, HutubsDataset
+from irdl.akt import AKTZipBaseDataset, FabianDataset, HutubsDataset
 from irdl.sonicom import AriDataset, CipicDataset, SadieDataset
 from irdl.utils import load_hash_registry
 
@@ -92,6 +92,35 @@ def test_ari_resolves_series_specific_manifest(monkeypatch):
     assert dataset._direct_sofa("dtf d_nh1379.sofa") == ("https://example.test/d", hashes["dtf d_nh1379.sofa"])
 
 
+@pytest.mark.parametrize(
+    ("source_filename", "direct_filename"),
+    [
+        ("FABIAN_HRIR_measured_HATO_0.sofa", "FABIAN_HRIR_measured_HATO_0.sofa"),
+        ("FABIAN_HRIR_simulated_HATO_0.sofa", "FABIAN_HRIR_modeled_HATO_0.sofa"),
+    ],
+)
+def test_fabian_resolves_individual_sonicom_sofa_url(monkeypatch, source_filename, direct_filename):
+    """Use SONICOM's individual FABIAN SOFA files."""
+    url = f"https://ecosystem.sonicom.eu/data/101/28598/62784/{direct_filename}"
+    monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: {direct_filename: url})
+
+    assert FabianDataset()._direct_sofa(source_filename) == (
+        url,
+        load_hash_registry("fabian")[direct_filename],
+    )
+
+
+def test_fabian_hashes_cover_all_selectors():
+    """Pin every FABIAN SOFA that can be requested through SONICOM."""
+    dataset = FabianDataset()
+    filenames = {
+        dataset._source_filename(kind=kind, hato=hato)
+        for kind in ("measured", "simulated")
+        for hato in (0, 10, 20, 30, 40, 50, 310, 320, 330, 340, 350)
+    }
+    assert {filename.replace("_simulated_", "_modeled_") for filename in filenames} == set(load_hash_registry("fabian"))
+
+
 def test_hutubs_resolves_individual_sonicom_sofa_url(monkeypatch):
     """Use SONICOM's individual measured and simulated HUTUBS files."""
     urls = {
@@ -135,21 +164,21 @@ def test_cipic_downloads_only_requested_sonicom_file(monkeypatch, tmp_path):
     assert calls == [direct_sofa]
 
 
-def test_hutubs_raw_download_uses_canonical_zip(monkeypatch, tmp_path):
-    """Keep HUTUBS raw retrieval on its DepositOnce ZIP."""
-    expected = tmp_path / "HRIRs.zip"
+@pytest.mark.parametrize("dataset", [FabianDataset(), HutubsDataset()])
+def test_akt_raw_download_uses_canonical_zip(monkeypatch, tmp_path, dataset):
+    """Keep AKT raw retrieval on its DepositOnce ZIP."""
     calls = []
 
-    def download_zip(_dataset, provider_dir: Path, **_dataset_kwargs) -> Path:
+    def download_zip(source_dataset, provider_dir: Path, **_dataset_kwargs) -> Path:
         calls.append(provider_dir)
-        return expected
+        return provider_dir / source_dataset._zipfile
 
     monkeypatch.setattr(AKTZipBaseDataset, "_download", download_zip)
-    assert HutubsDataset()._download(tmp_path, subject=1, kind="measured") == expected
+    assert dataset._download(tmp_path) == tmp_path / dataset._zipfile
     assert calls == [tmp_path]
 
 
-@pytest.mark.parametrize("dataset_name", ["ari", "cipic", "sadie", "hutubs", "dechorate", "miracle"])
+@pytest.mark.parametrize("dataset_name", ["ari", "cipic", "sadie", "fabian", "hutubs", "dechorate", "miracle"])
 def test_dataset_hashes_are_keyed_by_source_filename(dataset_name):
     """Keep each Dataset's content pins separate from mutable endpoint URLs."""
     hashes = load_hash_registry(dataset_name)
