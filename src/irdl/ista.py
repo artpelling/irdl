@@ -7,8 +7,15 @@ Currently this module hosts:
 """
 
 import hashlib
+import os
+import zlib
+from collections import deque
+from collections.abc import Iterable, Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import h5py as h5
 import netCDF4
@@ -52,50 +59,102 @@ class IstaBaseDataset(BaseDataset):
             msg = "_chunk_size must be > 0"
             raise ValueError(msg)
 
-        sofa_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Streaming ISTA HDF5 {ingest_path} to SOFA {sofa_path}.")
-        with h5.File(ingest_path, "r") as hdf5, netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
+        with self._staged_sofa(ingest_path, sofa_path, **dataset_kwargs) as staged, h5.File(ingest_path, "r") as hdf5:
             ir = hdf5["data/impulse_response"]
             m, r, n = ir.shape
-            chunk_size = self._ir_batch_size(r, n)
-            has_humidity = "humidity" in hdf5["metadata"]
-            logger.info(f"Writing {m} measurements, {r} receivers, {n} samples in chunks of {chunk_size}.")
-            self._create_default_variables(
-                sofa,
-                m=m,
-                r=r,
-                n=n,
-                has_humidity=has_humidity,
-                receiver_position=np.asarray(hdf5["data/location/receiver"]),
-                sampling_rate=float(hdf5["metadata/sampling_rate"][()]),
-            )
-            self._create_room_variables(sofa, **dataset_kwargs)
-            data_ir = sofa.variables["Data.IR"]
-            source = sofa.variables["SourcePosition"]
-            temperature = sofa.variables["RoomTemperature"]
-            speed = sofa.variables["SpeedOfSound"]
-            humidity = sofa.variables["Humidity"] if has_humidity else None
             if m == 0:
                 msg = "Impulse response dataset is empty"
                 raise ValueError(msg)
+            chunk_size = self._ir_batch_size(r, n)
+            has_humidity = "humidity" in hdf5["metadata"]
+            logger.info(f"Writing {m} measurements, {r} receivers, {n} samples in chunks of {chunk_size}.")
+            with netCDF4.Dataset(staged, "w", format="NETCDF4") as sofa:
+                self._create_default_variables(
+                    sofa,
+                    m=m,
+                    r=r,
+                    n=n,
+                    has_humidity=has_humidity,
+                    receiver_position=np.asarray(hdf5["data/location/receiver"]),
+                    sampling_rate=float(hdf5["metadata/sampling_rate"][()]),
+                )
+                self._create_room_variables(sofa, **dataset_kwargs)
+                source = sofa.variables["SourcePosition"]
+                temperature = sofa.variables["RoomTemperature"]
+                speed = sofa.variables["SpeedOfSound"]
+                humidity = sofa.variables["Humidity"] if has_humidity else None
+                hdf5_source = hdf5["data/location/source"]
+                hdf5_temperature = hdf5["metadata/temperature"]
+                hdf5_speed = hdf5["metadata/c0"]
+                hdf5_humidity = hdf5["metadata/humidity"] if humidity is not None else None
+                for row_slice in _chunk_slices(m, chunk_size):
+                    source[row_slice, :] = hdf5_source[row_slice]
+                    temperature[row_slice] = hdf5_temperature[row_slice].astype(np.float64) + 273.15
+                    speed[row_slice, 0] = hdf5_speed[row_slice]
+                    if humidity is not None:
+                        humidity[row_slice, 0] = hdf5_humidity[row_slice]
+            # netCDF4 must close before h5py writes externally encoded chunks.
+            self._write_ir_chunks(staged, ((rows.start, ir[rows]) for rows in _chunk_slices(m, chunk_size)))
 
-            hdf5_source = hdf5["data/location/source"]
-            hdf5_temperature = hdf5["metadata/temperature"]
-            hdf5_speed = hdf5["metadata/c0"]
-            hdf5_humidity = hdf5["metadata/humidity"] if humidity is not None else None
-            logger.debug("Streaming impulse responses and metadata rows.")
-            for row_slice in _chunk_slices(m, chunk_size):
-                data_ir[row_slice, :, :, 0] = ir[row_slice]
-                source[row_slice, :] = hdf5_source[row_slice]
-                temperature[row_slice] = hdf5_temperature[row_slice].astype(np.float64) + 273.15
-                speed[row_slice, 0] = hdf5_speed[row_slice]
-                if humidity is not None:
-                    humidity[row_slice, 0] = hdf5_humidity[row_slice]
-
-        _preserve_permissions(ingest_path, sofa_path)
-        self._verify_payload(sofa_path, ingest_path, **dataset_kwargs)
         logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
+
+    @contextmanager
+    def _staged_sofa(self, ingest_path: Path, sofa_path: Path, **dataset_kwargs) -> Iterator[Path]:
+        """Promote a Canonical SOFA Artifact only after all writers close and checks pass."""
+        sofa_path.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix=f".{sofa_path.stem}-", dir=sofa_path.parent) as temporary:
+            staged = Path(temporary) / sofa_path.name
+            yield staged
+            _preserve_permissions(ingest_path, staged)
+            self._verify_payload(staged, ingest_path, **dataset_kwargs)
+            self._verify_sofa_convention(staged)
+            staged.replace(sofa_path)
+
+    def _write_ir_chunks(
+        self, sofa_path: Path, batches: Iterable[tuple[int, np.ndarray]], *, workers: int | None = None
+    ) -> None:
+        """Encode owned IR chunks in workers; keep every HDF5 call on this thread."""
+        workers = min(6, os.cpu_count() or 1) if workers is None else workers
+        if workers <= 0:
+            msg = "Compression workers must be > 0"
+            raise ValueError(msg)
+        with h5.File(sofa_path, "r+") as sofa, ThreadPoolExecutor(max_workers=workers) as executor:
+            ir = sofa["Data.IR"]
+            creation = ir.id.get_create_plist()
+            filters = tuple(creation.get_filter(index)[0] for index in range(creation.get_nfilters()))
+            if (
+                ir.ndim != _SOFA_FIR_E_DIMS
+                or filters != (h5.h5z.FILTER_SHUFFLE, h5.h5z.FILTER_DEFLATE)
+                or ir.chunks != (1, ir.shape[1], ir.chunks[2], 1)
+                or ir.dtype.kind != "f"
+                or ir.dtype.itemsize != np.dtype(np.float64).itemsize
+            ):
+                msg = "Threaded IR encoding requires float64, single-measurement chunks with shuffle then gzip"
+                raise ValueError(msg)
+            pending = deque()
+            encoding = (ir.chunks, ir.dtype, ir.fillvalue, ir.compression_opts)
+            try:
+                for first_row, batch in batches:
+                    for row, measurement in enumerate(batch):
+                        for samples in _chunk_slices(measurement.shape[1], ir.chunks[2]):
+                            offset = (first_row + row, 0, samples.start, 0)
+                            # Own each submitted buffer; no views retaining a whole streaming batch.
+                            data = np.array(measurement[:, samples], copy=True, order="C")
+                            if workers == 1:
+                                ir.id.write_direct_chunk(offset, _encode_ir_chunk(data, *encoding), filter_mask=0)
+                            else:
+                                pending.append((offset, executor.submit(_encode_ir_chunk, data, *encoding)))
+                                if len(pending) >= 2 * workers:
+                                    destination, future = pending.popleft()
+                                    ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+                while pending:
+                    destination, future = pending.popleft()
+                    ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+            finally:
+                for _, future in pending:
+                    future.cancel()
 
     def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **_dataset_kwargs) -> None:
         """Verify that a streamed ISTA SOFA matches its HDF5 ingest artifact."""
@@ -259,6 +318,17 @@ class IstaBaseDataset(BaseDataset):
         speed[:] = 0.0
         if humidity is not None:
             humidity[:] = 0.0
+
+
+def _encode_ir_chunk(data: np.ndarray, shape: tuple[int, ...], dtype: np.dtype, fill_value: float, level: int) -> bytes:
+    """Apply the HDF5 byte-shuffle and deflate filters, including edge padding."""
+    if data.shape == shape[1:3]:
+        chunk = np.asarray(data, dtype=dtype, order="C")
+    else:
+        chunk = np.full(shape[1:3], fill_value, dtype=dtype)
+        chunk[:, : data.shape[1]] = data
+    shuffled = chunk.view(np.uint8).reshape(-1, dtype.itemsize).T.copy().tobytes()
+    return zlib.compress(shuffled, level)
 
 
 def _canonical_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
@@ -713,58 +783,70 @@ class SrirachaDataset(IstaBaseDataset):
         with h5.File(split_files["C1"], "r") as first:
             ir_shape = first["data/impulse_response"].shape
             n_split = ir_shape[0]
+            n_split_grid = int(np.sqrt(n_split))
+            if n_split == 0 or n_split_grid**2 != n_split:
+                msg = "SRIRACHA Splits must contain a nonempty square grid"
+                raise ValueError(msg)
             m, r, n = (len(split_files) * n_split, *ir_shape[1:])
             has_humidity = "humidity" in first["metadata"]
             split_chunk_size = max(1, self._ir_batch_size(r, n) // 2)
 
-        sofa_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Streaming SRIRACHA split files for {scenario} to SOFA {sofa_path}.")
         logger.info(f"Writing {m} measurements, {r} receivers, {n} samples.")
         with (
-            netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa,
+            self._staged_sofa(provider_dir, sofa_path, **dataset_kwargs) as staged,
             h5.File(split_files["C1"], "r") as c1,
             h5.File(split_files["C2"], "r") as c2,
             h5.File(split_files["C3"], "r") as c3,
             h5.File(split_files["C4"], "r") as c4,
         ):
             handles = {"C1": c1, "C2": c2, "C3": c3, "C4": c4}
-            self._create_default_variables(
-                sofa,
-                m=m,
-                r=r,
-                n=n,
-                has_humidity=has_humidity,
-                receiver_position=np.asarray(c1["data/location/receiver"]),
-                sampling_rate=float(c1["metadata/sampling_rate"][()]),
-            )
-            self._create_room_variables(sofa, **dataset_kwargs)
-            data_ir = sofa.variables["Data.IR"]
-            source = sofa.variables["SourcePosition"]
-            temperature = sofa.variables["RoomTemperature"]
-            speed = sofa.variables["SpeedOfSound"]
-            humidity = sofa.variables["Humidity"] if has_humidity else None
-
-            n_full_grid = int(np.sqrt(len(self._split_offsets) * n_split))
-            n_split_grid = n_full_grid // 2
-            logger.debug(f"Merging {n_split_grid}x{n_split_grid} split grids into {n_full_grid}x{n_full_grid} grid.")
-            for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size):
-                left, right = handles[left_name], handles[right_name]
-                data_ir[dst, :, :, 0] = _interleave_rows(
-                    left["data/impulse_response"][src], right["data/impulse_response"][src]
+            for handle in handles.values():
+                if handle["data/impulse_response"].shape != ir_shape:
+                    msg = "SRIRACHA Split IR shapes must match"
+                    raise ValueError(msg)
+            with netCDF4.Dataset(staged, "w", format="NETCDF4") as sofa:
+                self._create_default_variables(
+                    sofa,
+                    m=m,
+                    r=r,
+                    n=n,
+                    has_humidity=has_humidity,
+                    receiver_position=np.asarray(c1["data/location/receiver"]),
+                    sampling_rate=float(c1["metadata/sampling_rate"][()]),
                 )
-                source[dst, :] = _interleave_rows(left["data/location/source"][src], right["data/location/source"][src])
-                temperature[dst] = (
-                    _interleave_rows(left["metadata/temperature"][src], right["metadata/temperature"][src]).astype(
-                        np.float64
+                self._create_room_variables(sofa, **dataset_kwargs)
+                source = sofa.variables["SourcePosition"]
+                temperature = sofa.variables["RoomTemperature"]
+                speed = sofa.variables["SpeedOfSound"]
+                humidity = sofa.variables["Humidity"] if has_humidity else None
+                for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size):
+                    left, right = handles[left_name], handles[right_name]
+                    source[dst, :] = _interleave_rows(
+                        left["data/location/source"][src], right["data/location/source"][src]
                     )
-                    + 273.15
+                    temperature[dst] = (
+                        _interleave_rows(left["metadata/temperature"][src], right["metadata/temperature"][src]).astype(
+                            np.float64
+                        )
+                        + 273.15
+                    )
+                    speed[dst, 0] = _interleave_rows(left["metadata/c0"][src], right["metadata/c0"][src])
+                    if humidity is not None:
+                        humidity[dst, 0] = _interleave_rows(
+                            left["metadata/humidity"][src], right["metadata/humidity"][src]
+                        )
+            batches = (
+                (
+                    dst.start,
+                    _interleave_rows(
+                        handles[left]["data/impulse_response"][src], handles[right]["data/impulse_response"][src]
+                    ),
                 )
-                speed[dst, 0] = _interleave_rows(left["metadata/c0"][src], right["metadata/c0"][src])
-                if humidity is not None:
-                    humidity[dst, 0] = _interleave_rows(left["metadata/humidity"][src], right["metadata/humidity"][src])
+                for src, dst, left, right in _split_row_slices(n_split_grid, split_chunk_size)
+            )
+            self._write_ir_chunks(staged, batches)
 
-        _preserve_permissions(ingest_path, sofa_path)
-        self._verify_payload(sofa_path, provider_dir, scenario=scenario)
         logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
 

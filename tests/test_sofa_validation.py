@@ -1,6 +1,9 @@
 """Tests for ISTA SOFA stream writing and payload checks."""
 
+import shutil
 from pathlib import Path
+from threading import get_ident
+from unittest.mock import MagicMock, Mock
 
 import h5py
 import netCDF4
@@ -8,6 +11,7 @@ import numpy as np
 import pytest
 import sofar as sf
 
+from irdl import ista
 from irdl.ista import SrirachaDataset
 
 
@@ -149,6 +153,186 @@ def test_sriracha_full_plane_process_keeps_provider_artifact_set(tmp_path):
     assert not ingest_path.exists()
 
 
+@pytest.mark.parametrize("workers", [1, 2, 4])
+def test_raw_ir_chunks_preserve_float64_values_and_partial_chunks(tmp_path, workers):
+    """Externally compressed chunks decode through both netCDF4 and sofar."""
+    hdf5_path, native_path = _write_matching_ista_files(tmp_path, n_samples=50_000)
+    sofa_path = tmp_path / "raw-chunks.sofa"
+    shutil.copyfile(native_path, sofa_path)
+    with h5py.File(hdf5_path, "r+") as hdf5:
+        expected = hdf5["data/impulse_response"][:] * np.float32(-0.0007)
+        expected[0, 0, 0] = -0.0
+        hdf5["data/impulse_response"][:] = expected
+        SrirachaDataset()._write_ir_chunks(sofa_path, [(0, expected)], workers=workers)
+
+    with netCDF4.Dataset(sofa_path) as sofa:
+        actual = np.asarray(sofa.variables["Data.IR"][:, :, :, 0])
+        np.testing.assert_array_equal(actual.view(np.uint64), expected.astype(np.float64).view(np.uint64))
+        assert sofa.variables["Data.IR"].filters()["zlib"]
+    with sf.SofaStream(sofa_path) as sofa:
+        assert sofa.verify(issue_handling="return", mode="read") is None
+    SrirachaDataset()._verify_payload(sofa_path, hdf5_path)
+
+
+@pytest.mark.parametrize("full_plane", [False, True])
+@pytest.mark.parametrize("failure", ["compress", "_verify_payload", "_verify_sofa_convention"])
+def test_failed_threaded_ingest_preserves_existing_artifact(tmp_path, monkeypatch, full_plane, failure):
+    """Worker and validation errors cannot promote a partial Canonical SOFA Artifact."""
+    if full_plane:
+        ingest_path = tmp_path / "provider"
+        ingest_path.mkdir()
+        _write_sriracha_split_files(ingest_path)
+        scenario = "SR1"
+    else:
+        ingest_path, _ = _write_matching_ista_files(tmp_path)
+        scenario = "SR1D"
+    sofa_path = tmp_path / "retained.sofa"
+    original = b"existing artifact must survive failure"
+    sofa_path.write_bytes(original)
+    dataset = SrirachaDataset()
+
+    def fail(*_args, **_kwargs):
+        msg = "Injected failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(ista.zlib if failure == "compress" else dataset, failure, fail)
+    with pytest.raises(RuntimeError, match="Injected failure"):
+        dataset._ingest(ingest_path, sofa_path, scenario=scenario, dataset_split=None)
+
+    assert sofa_path.read_bytes() == original
+    assert not list(tmp_path.glob(".retained-*"))
+
+
+@pytest.mark.parametrize("full_plane", [False, True])
+def test_threaded_ingest_keeps_hdf5_reads_on_main_thread(tmp_path, monkeypatch, full_plane):
+    """Compression uses workers, while Provider reads remain on the caller thread."""
+    if full_plane:
+        ingest_path = tmp_path / "provider"
+        ingest_path.mkdir()
+        _write_sriracha_split_files(ingest_path, split_grid_size=3)
+        scenario = "SR1"
+    else:
+        ingest_path, _ = _write_matching_ista_files(tmp_path)
+        scenario = "SR1D"
+    main_thread = get_ident()
+    encoder_threads = set()
+    original_read = h5py.Dataset.__getitem__
+    original_compress = ista.zlib.compress
+
+    def read(dataset, key):
+        assert get_ident() == main_thread
+        return original_read(dataset, key)
+
+    def compress(*args):
+        encoder_threads.add(get_ident())
+        return original_compress(*args)
+
+    monkeypatch.setattr(h5py.Dataset, "__getitem__", read)
+    monkeypatch.setattr(ista.zlib, "compress", compress)
+    monkeypatch.setattr(ista.os, "cpu_count", lambda: 4)
+    SrirachaDataset()._ingest(ingest_path, tmp_path / "threaded.sofa", scenario=scenario, dataset_split=None)
+
+    assert encoder_threads
+    assert main_thread not in encoder_threads
+
+
+def test_threaded_chunk_queue_is_bounded_and_owns_submitted_buffers(tmp_path, monkeypatch):
+    """Backpressure limits queued work even when the producer reuses its input."""
+    sofa_path = tmp_path / "bounded.sofa"
+    with netCDF4.Dataset(sofa_path, "w") as sofa:
+        SrirachaDataset()._create_default_variables(
+            sofa, m=10, r=2, n=3, has_humidity=False, receiver_position=np.zeros((2, 3)), sampling_rate=48_000
+        )
+    pending = maximum = 0
+    workers = 2
+    executor = MagicMock()
+    executor.__enter__.return_value = executor
+
+    def submit(function, *args):
+        nonlocal pending, maximum
+        pending += 1
+        maximum = max(maximum, pending)
+        future = Mock()
+
+        def result():
+            nonlocal pending
+            pending -= 1
+            return function(*args)
+
+        future.result.side_effect = result
+        return future
+
+    def batches():
+        buffer = np.empty((1, 2, 3), dtype=np.float32)
+        for row in range(10):
+            buffer.fill(row)
+            yield row, buffer
+
+    executor.submit.side_effect = submit
+    monkeypatch.setattr(ista, "ThreadPoolExecutor", lambda **_kwargs: executor)
+    SrirachaDataset()._write_ir_chunks(sofa_path, batches(), workers=workers)
+
+    assert maximum <= 2 * workers
+    assert pending == 0
+    with netCDF4.Dataset(sofa_path) as sofa:
+        expected = np.broadcast_to(np.arange(10)[:, None, None], (10, 2, 3))
+        np.testing.assert_array_equal(sofa.variables["Data.IR"][:, :, :, 0], expected)
+
+
+@pytest.mark.parametrize("n_sources", [0, 2])
+def test_sriracha_rejects_incomplete_split_grids(tmp_path, n_sources):
+    """Every Split must describe a nonempty square grid, not a partial plane."""
+    provider_dir = tmp_path / "provider"
+    provider_dir.mkdir()
+    _write_sriracha_split_files(provider_dir)
+    with h5py.File(provider_dir / "SR1-C1.h5", "r+") as hdf5:
+        del hdf5["data/impulse_response"]
+        hdf5["data/impulse_response"] = np.zeros((n_sources, 2, 3), dtype=np.float32)
+    sofa_path = tmp_path / "SR1.sofa"
+    with pytest.raises(ValueError, match="nonempty square grid"):
+        SrirachaDataset()._ingest(provider_dir, sofa_path, scenario="SR1", dataset_split=None)
+    assert not sofa_path.exists()
+
+
+def test_sriracha_rejects_mismatched_split_shapes(tmp_path):
+    """Extra rows in another Split cannot silently disappear from the SOFA."""
+    provider_dir = tmp_path / "provider"
+    provider_dir.mkdir()
+    _write_sriracha_split_files(provider_dir)
+    with h5py.File(provider_dir / "SR1-C4.h5", "r+") as hdf5:
+        del hdf5["data/impulse_response"]
+        hdf5["data/impulse_response"] = np.zeros((2, 2, 3), dtype=np.float32)
+    sofa_path = tmp_path / "SR1.sofa"
+    with pytest.raises(ValueError, match="Split IR shapes must match"):
+        SrirachaDataset()._ingest(provider_dir, sofa_path, scenario="SR1", dataset_split=None)
+    assert not sofa_path.exists()
+
+
+@pytest.mark.parametrize(("dtype", "zlib", "shuffle"), [("f4", True, True), ("f8", False, False), ("f8", True, False)])
+def test_raw_chunk_writer_rejects_incompatible_storage(tmp_path, dtype, zlib, shuffle):
+    """A mismatched filter pipeline must never receive externally encoded bytes."""
+    sofa_path = tmp_path / "unsupported.sofa"
+    with netCDF4.Dataset(sofa_path, "w") as sofa:
+        for name, size in (("M", 1), ("R", 2), ("N", 3), ("E", 1)):
+            sofa.createDimension(name, size)
+        sofa.createVariable("Data.IR", dtype, ("M", "R", "N", "E"), zlib=zlib, shuffle=shuffle)
+    with pytest.raises(ValueError, match="requires float64"):
+        SrirachaDataset()._write_ir_chunks(sofa_path, [(0, np.ones((1, 2, 3), dtype=np.float32))])
+
+
+@pytest.mark.parametrize("dtype", ["<f8", ">f8"])
+def test_chunk_encoder_preserves_storage_byte_order_and_edge_fill(dtype):
+    """Raw encoding preserves signed zero/nonfinite values and pads the sample tail."""
+    data = np.array([[-0.0, np.inf, np.nan], [1.5, -np.inf, 0.0]], dtype=np.float32)
+    storage = np.dtype(dtype)
+    encoded = ista._encode_ir_chunk(data, (1, 2, 4, 1), storage, 99.0, 4)
+    shuffled = np.frombuffer(ista.zlib.decompress(encoded), dtype=np.uint8)
+    decoded = shuffled.reshape(storage.itemsize, -1).T.copy().reshape(-1)
+    expected = np.full((2, 4), 99.0, dtype=storage)
+    expected[:, :3] = data
+    np.testing.assert_array_equal(decoded, expected.view(np.uint8).reshape(-1))
+
+
 def test_ista_payload_verification_accepts_matching_hdf5_and_sofa(tmp_path):
     """ISTA payload verification accepts matching HDF5 and SOFA data."""
     hdf5_path, sofa_path = _write_matching_ista_files(tmp_path)
@@ -191,8 +375,8 @@ def _write_sriracha_split_files(
     return expected
 
 
-def _write_matching_ista_files(tmp_path: Path) -> tuple[Path, Path]:
-    ir = np.arange(2 * 3 * 4, dtype=np.float32).reshape(2, 3, 4)
+def _write_matching_ista_files(tmp_path: Path, *, n_samples: int = 4) -> tuple[Path, Path]:
+    ir = np.arange(2 * 3 * n_samples, dtype=np.float32).reshape(2, 3, n_samples)
     source = np.array([[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], dtype=np.float64)
     receiver = np.array([[0.0, 0.5, 0.0], [0.0, -0.5, 0.0], [0.5, 0.0, 0.0]], dtype=np.float64)
 
