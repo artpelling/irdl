@@ -32,6 +32,15 @@ class IstaBaseDataset(BaseDataset):
         split = dataset_kwargs.get("dataset_split")
         return f"{scenario}{('-' + split) if split else ''}.h5"
 
+    def _ir_batch_size(self, r: int, n: int) -> int:
+        """Limit streamed IR batches by their float64 size as well as row count."""
+        chunk_size = int(self._chunk_size)
+        if chunk_size <= 0:
+            msg = "_chunk_size must be > 0"
+            raise ValueError(msg)
+        bytes_per_row = r * n * np.dtype(np.float64).itemsize
+        return min(chunk_size, max(1, (64 * 1024**2) // bytes_per_row))
+
     def _ingest(self, ingest_path: Path, sofa_path: Path, **dataset_kwargs) -> Path:
         """Stream an ISTA HDF5 ingest-ready file to SOFA without loading all IRs."""
         if ingest_path.is_dir():
@@ -48,6 +57,7 @@ class IstaBaseDataset(BaseDataset):
         with h5.File(ingest_path, "r") as hdf5, netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
             ir = hdf5["data/impulse_response"]
             m, r, n = ir.shape
+            chunk_size = self._ir_batch_size(r, n)
             has_humidity = "humidity" in hdf5["metadata"]
             logger.info(f"Writing {m} measurements, {r} receivers, {n} samples in chunks of {chunk_size}.")
             self._create_default_variables(
@@ -75,7 +85,7 @@ class IstaBaseDataset(BaseDataset):
             hdf5_humidity = hdf5["metadata/humidity"] if humidity is not None else None
             logger.debug("Streaming impulse responses and metadata rows.")
             for row_slice in _chunk_slices(m, chunk_size):
-                data_ir[row_slice, :, :, 0] = ir[row_slice].astype(np.float64)
+                data_ir[row_slice, :, :, 0] = ir[row_slice]
                 source[row_slice, :] = hdf5_source[row_slice]
                 temperature[row_slice] = hdf5_temperature[row_slice].astype(np.float64) + 273.15
                 speed[row_slice, 0] = hdf5_speed[row_slice]
@@ -132,7 +142,10 @@ class IstaBaseDataset(BaseDataset):
 
                 hdf5_hash = hashlib.sha256()
                 sofa_hash = hashlib.sha256()
-                for row_slice in _chunk_slices(hdf5_shape[0], chunk_size):
+                rows_per_batch = (
+                    self._ir_batch_size(*hdf5_variable.shape[1:]) if variable_name == "Data.IR" else chunk_size
+                )
+                for row_slice in _chunk_slices(hdf5_shape[0], rows_per_batch):
                     hdf5_data = hdf5_variable[row_slice]
                     if len(sofa_variable.shape) == _SOFA_FIR_E_DIMS and sofa_variable.shape[-1] == 1:
                         sofa_data = sofa_variable[row_slice, :, :, 0]
@@ -190,7 +203,16 @@ class IstaBaseDataset(BaseDataset):
         sofa.SourceShortName = "Loudspeaker"
         sofa.SourceDescription = 'Dynamic 2" cone loudspeaker in a cylindrical enclosure (100 Hz-16 kHz)'
 
-        sofa.createVariable("Data.IR", "f8", ("M", "R", "N", "E"), zlib=True, complevel=4)
+        # Keep chunks within one measurement and 1 MiB to avoid recompressing neighboring rows.
+        samples_per_chunk = max(1, min(n, 1024**2 // (r * np.dtype(np.float64).itemsize)))
+        sofa.createVariable(
+            "Data.IR",
+            "f8",
+            ("M", "R", "N", "E"),
+            zlib=True,
+            complevel=4,
+            chunksizes=(1, r, samples_per_chunk, 1),
+        )
         source = sofa.createVariable("SourcePosition", "f8", ("M", "C"))
         source_view = sofa.createVariable("SourceView", "f8", ("M", "C"))
         source_up = sofa.createVariable("SourceUp", "f8", ("M", "C"))
@@ -247,6 +269,26 @@ def _canonical_shape(shape: tuple[int, ...]) -> tuple[int, ...]:
 def _chunk_slices(length: int, chunk_size: int):
     for start in range(0, length, chunk_size):
         yield slice(start, min(start + chunk_size, length))
+
+
+def _split_row_slices(n_split_grid: int, chunk_size: int):
+    """Map contiguous Split rows to contiguous, interleaved full-plane rows."""
+    n_full_grid = 2 * n_split_grid
+    for split_row in range(n_split_grid):
+        for row, (left, right) in enumerate((("C1", "C2"), ("C3", "C4"))):
+            grid_start = (2 * split_row + row) * n_full_grid
+            for columns in _chunk_slices(n_split_grid, chunk_size):
+                src = slice(split_row * n_split_grid + columns.start, split_row * n_split_grid + columns.stop)
+                dst = slice(grid_start + 2 * columns.start, grid_start + 2 * columns.stop)
+                yield src, dst, left, right
+
+
+def _interleave_rows(left: np.ndarray, right: np.ndarray) -> np.ndarray:
+    """Interleave two Split row batches without a strided disk access."""
+    merged = np.empty((2 * len(left), *left.shape[1:]), dtype=np.result_type(left, right))
+    merged[::2] = left
+    merged[1::2] = right
+    return merged
 
 
 def _canonical_array(data: np.ndarray, dtype: np.dtype) -> np.ndarray:
@@ -631,9 +673,9 @@ class SrirachaDataset(IstaBaseDataset):
     def _process(self, provider_artifact: Path, ingest_path: Path, **dataset_kwargs) -> Path:
         """Post-process SRIRACHA file if needed.
 
-        For non-dense full-plane scenarios, merges the 4 downloaded split files
-        from the provider directory into a single file in the ingest directory.
-        Otherwise promotes the single file to the ingest stage.
+        Non-dense full-plane scenarios retain the four Provider files as the
+        ingest-ready artifact set. Otherwise promotes the single file to the
+        ingest stage.
 
         Parameters
         ----------
@@ -673,6 +715,7 @@ class SrirachaDataset(IstaBaseDataset):
             n_split = ir_shape[0]
             m, r, n = (len(split_files) * n_split, *ir_shape[1:])
             has_humidity = "humidity" in first["metadata"]
+            split_chunk_size = max(1, self._ir_batch_size(r, n) // 2)
 
         sofa_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Streaming SRIRACHA split files for {scenario} to SOFA {sofa_path}.")
@@ -704,18 +747,21 @@ class SrirachaDataset(IstaBaseDataset):
             n_full_grid = int(np.sqrt(len(self._split_offsets) * n_split))
             n_split_grid = n_full_grid // 2
             logger.debug(f"Merging {n_split_grid}x{n_split_grid} split grids into {n_full_grid}x{n_full_grid} grid.")
-            for split_name, (row, col) in self._split_offsets:
-                hdf5 = handles[split_name]
-                for split_row in range(n_split_grid):
-                    src = slice(split_row * n_split_grid, (split_row + 1) * n_split_grid)
-                    grid_row = 2 * split_row + row
-                    dst = slice(grid_row * n_full_grid + col, grid_row * n_full_grid + n_full_grid, 2)
-                    data_ir[dst, :, :, 0] = hdf5["data/impulse_response"][src].astype(np.float64)
-                    source[dst, :] = hdf5["data/location/source"][src]
-                    temperature[dst] = hdf5["metadata/temperature"][src].astype(np.float64) + 273.15
-                    speed[dst, 0] = hdf5["metadata/c0"][src]
-                    if humidity is not None:
-                        humidity[dst, 0] = hdf5["metadata/humidity"][src]
+            for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size):
+                left, right = handles[left_name], handles[right_name]
+                data_ir[dst, :, :, 0] = _interleave_rows(
+                    left["data/impulse_response"][src], right["data/impulse_response"][src]
+                )
+                source[dst, :] = _interleave_rows(left["data/location/source"][src], right["data/location/source"][src])
+                temperature[dst] = (
+                    _interleave_rows(left["metadata/temperature"][src], right["metadata/temperature"][src]).astype(
+                        np.float64
+                    )
+                    + 273.15
+                )
+                speed[dst, 0] = _interleave_rows(left["metadata/c0"][src], right["metadata/c0"][src])
+                if humidity is not None:
+                    humidity[dst, 0] = _interleave_rows(left["metadata/humidity"][src], right["metadata/humidity"][src])
 
         _preserve_permissions(ingest_path, sofa_path)
         self._verify_payload(sofa_path, provider_dir, scenario=scenario)
@@ -741,35 +787,34 @@ class SrirachaDataset(IstaBaseDataset):
             h5.File(split_files["C4"], "r") as c4,
         ):
             handles = {"C1": c1, "C2": c2, "C3": c3, "C4": c4}
-            n_split = c1["data/impulse_response"].shape[0]
+            n_split, r, n = c1["data/impulse_response"].shape
             n_full_grid = int(np.sqrt(len(self._split_offsets) * n_split))
             n_split_grid = n_full_grid // 2
-            for split_name, (row, col) in self._split_offsets:
-                hdf5 = handles[split_name]
-                for split_row in range(n_split_grid):
-                    src = slice(split_row * n_split_grid, (split_row + 1) * n_split_grid)
-                    grid_row = 2 * split_row + row
-                    dst = slice(grid_row * n_full_grid + col, grid_row * n_full_grid + n_full_grid, 2)
-                    comparisons = (
-                        (
-                            "Data.IR",
-                            hdf5["data/impulse_response"][src],
-                            sofa_dataset.variables["Data.IR"][dst, :, :, 0],
-                            np.float32,
-                        ),
-                        (
-                            "SourcePosition",
-                            hdf5["data/location/source"][src],
-                            sofa_dataset.variables["SourcePosition"][dst, :],
-                            np.float64,
-                        ),
-                    )
-                    for variable_name, left, right, dtype in comparisons:
-                        left_hash = hashlib.sha256(_canonical_array(left, np.dtype(dtype)).view(np.uint8)).hexdigest()
-                        right_hash = hashlib.sha256(_canonical_array(right, np.dtype(dtype)).view(np.uint8)).hexdigest()
-                        if left_hash != right_hash:
-                            msg = (
-                                f"SOFA checksum validation failed for {sofa_path}: "
-                                f"checksum differs from SRIRACHA split data: {variable_name}"
-                            )
-                            raise ValueError(msg)
+            split_chunk_size = max(1, self._ir_batch_size(r, n) // 2)
+            for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size):
+                left, right = handles[left_name], handles[right_name]
+                comparisons = (
+                    (
+                        "Data.IR",
+                        _interleave_rows(left["data/impulse_response"][src], right["data/impulse_response"][src]),
+                        sofa_dataset.variables["Data.IR"][dst, :, :, 0],
+                        np.float32,
+                    ),
+                    (
+                        "SourcePosition",
+                        _interleave_rows(left["data/location/source"][src], right["data/location/source"][src]),
+                        sofa_dataset.variables["SourcePosition"][dst, :],
+                        np.float64,
+                    ),
+                )
+                for variable_name, expected, actual, dtype in comparisons:
+                    expected_hash = hashlib.sha256(
+                        _canonical_array(expected, np.dtype(dtype)).view(np.uint8)
+                    ).hexdigest()
+                    actual_hash = hashlib.sha256(_canonical_array(actual, np.dtype(dtype)).view(np.uint8)).hexdigest()
+                    if expected_hash != actual_hash:
+                        msg = (
+                            f"SOFA checksum validation failed for {sofa_path}: "
+                            f"checksum differs from SRIRACHA split data: {variable_name}"
+                        )
+                        raise ValueError(msg)
