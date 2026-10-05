@@ -19,6 +19,7 @@ Dataset modules
    iks
    ista
    sonicom
+   uec
 
 Registry
 --------

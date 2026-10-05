@@ -14,5 +14,6 @@ from .ista import SrirachaDataset as SrirachaDataset
 from .sonicom import CipicDataset as CipicDataset
 from .sonicom import DechorateDataset as DechorateDataset
 from .sonicom import SadieDataset as SadieDataset
+from .uec import Meshgrid3dDataset as Meshgrid3dDataset
 
 __all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
