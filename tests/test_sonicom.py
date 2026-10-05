@@ -64,18 +64,21 @@ def test_sonicom_manifest_resolves_current_url(monkeypatch):
     assert direct_sofa[1] is not None
 
 
-def test_sonicom_manifest_rejects_duplicate_filenames(monkeypatch):
-    """Do not silently overwrite ambiguous provider filenames and their URLs."""
+def test_sonicom_manifest_warns_once_and_keeps_first_duplicate_filename(monkeypatch, caplog):
+    """Warn once for duplicate auxiliary files without replacing their first URL."""
+    first_url = "https://ecosystem.sonicom.eu/data/18/1/generic.sofa"
     payload = {
         "data": [
-            {"Datafile Name": "generic.sofa", "Datafile URL": f"https://ecosystem.sonicom.eu/data/18/{i}/generic.sofa"}
-            for i in (1, 2)
+            {"Datafile Name": "generic.sofa", "Datafile URL": first_url},
+            {"Datafile Name": "generic.sofa", "Datafile URL": "https://ecosystem.sonicom.eu/data/18/2/generic.sofa"},
+            {"Datafile Name": "generic.sofa", "Datafile URL": "https://ecosystem.sonicom.eu/data/18/3/generic.sofa"},
         ]
     }
     monkeypatch.setattr(sonicom, "urlopen", lambda _url: io.BytesIO(json.dumps(payload).encode()))
     sonicom._sonicom_manifest.cache_clear()
-    with pytest.raises(ValueError, match=r"Duplicate SONICOM filename 'generic\.sofa'"):
-        sonicom._sonicom_manifest(18)
+
+    assert sonicom._sonicom_manifest(18) == {"generic.sofa": first_url}
+    assert caplog.messages == ['Duplicate key "generic.sofa" in SONICOM database 18; downloading first match.']
 
 
 def test_ari_resolves_series_specific_manifest(monkeypatch):

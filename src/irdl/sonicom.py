@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from irdl.base import BaseDataset, DatasetCategory
+from irdl.logging import logger
 from irdl.utils import load_hash_registry
 
 _SONICOM_ROOT = "https://ecosystem.sonicom.eu"
@@ -38,6 +39,7 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
 
     prefix = f"{_SONICOM_ROOT}/data/{database_id}/"
     manifest = {}
+    duplicate_filenames: set[str] = set()
     for datafile in datafiles:
         try:
             filename = datafile["Datafile Name"]
@@ -55,9 +57,13 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
             msg = f"Invalid SONICOM manifest entry for database {database_id}"
             raise ValueError(msg)
         if filename in manifest:
-            msg = f"Duplicate SONICOM filename {filename!r} in database {database_id}"
-            raise ValueError(msg)
-        manifest[filename] = datafile_url
+            if filename not in duplicate_filenames:
+                logger.warning(
+                    f'Duplicate key "{filename}" in SONICOM database {database_id}; downloading first match.'
+                )
+                duplicate_filenames.add(filename)
+        else:
+            manifest[filename] = datafile_url
     return manifest
 
 
