@@ -1,6 +1,6 @@
 """Datasets available through the SONICOM Ecosystem.
 
-Currently this module hosts CIPIC, dEchorate, and SADIE II.
+Currently this module hosts ARI, CIPIC, dEchorate, and SADIE II.
 """
 
 import json
@@ -54,6 +54,9 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
             or Path(urlparse(datafile_url).path).name != filename
         ):
             msg = f"Invalid SONICOM manifest entry for database {database_id}"
+            raise ValueError(msg)
+        if filename in manifest:
+            msg = f"Duplicate SONICOM filename {filename!r} in database {database_id}"
             raise ValueError(msg)
         manifest[filename] = datafile_url
     return manifest
@@ -139,7 +142,7 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
     _database_ids: ClassVar = {"b": 14, "c": 16, "d": 18}
     _subjects = frozenset(
         filename.removeprefix("hrtf ").removesuffix(".sofa")
-        for filename in load_hash_registry("sonicom")
+        for filename in load_hash_registry("ari")
         if filename.startswith(("hrtf b_nh", "hrtf c_nh", "hrtf d_nh"))
     )
 
@@ -154,7 +157,8 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
     ) -> dict | Path | None:
         """
         subject : str, optional
-            ARI subject identifier, for example 'b_nh10'. Default is 'b_nh10'.
+            ARI subject identifier from series B, C, or D, for example 'b_nh10',
+            'c_nh1000', or 'd_nh1407'. Default is 'b_nh10'.
         kind : str, optional
             File type: 'hrtf' or 'dtf'. Default is 'hrtf'.
 
@@ -172,15 +176,11 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
             output_format=output_format,
         )
 
-    def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
-        """Download the requested native SOFA file from SONICOM."""
-        return self._download_sonicom_sofa(provider_dir, **dataset_kwargs)
-
     def _validate_params(self, **dataset_kwargs) -> None:
         """Validate the ARI subject identifier and file type."""
         subject = dataset_kwargs["subject"]
         kind = dataset_kwargs["kind"]
-        if subject not in self._subjects:
+        if not isinstance(subject, str) or subject not in self._subjects:
             msg = f"subject must be one of {sorted(self._subjects)}"
             raise ValueError(msg)
         if kind not in ("hrtf", "dtf"):
@@ -191,12 +191,11 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
         """Return the native SONICOM filename for the requested ARI file."""
         return f"{dataset_kwargs['kind']} {dataset_kwargs['subject']}.sofa"
 
-    def direct_sofa_url(self, source_filename: str) -> str | None:
-        """Resolve an ARI source filename through its series-specific manifest."""
-        if self.direct_sofa_hash(source_filename) is None:
-            return None
+    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
+        """Resolve an ARI SOFA artifact and digest through its series manifest."""
         series = source_filename.split(" ", 1)[1][0]
-        return _sonicom_manifest(self._database_ids[series]).get(source_filename)
+        url = _sonicom_manifest(self._database_ids[series]).get(source_filename)
+        return (url, load_hash_registry(self.name).get(source_filename)) if url is not None else (None, None)
 
 
 class SadieDataset(SonicomBaseDataset, BaseDataset):
