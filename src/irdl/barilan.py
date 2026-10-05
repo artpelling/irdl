@@ -1,4 +1,4 @@
-"""Datasets from Inria, France.
+"""Datasets from Bar-Ilan University, Ramat Gan, Israel.
 
 Currently this module hosts dEchorate.
 """

@@ -6,10 +6,10 @@ from .aalto import MrtdDataset as MrtdDataset
 from .akt import BrasRs8Dataset as BrasRs8Dataset
 from .akt import FabianDataset as FabianDataset
 from .akt import HutubsDataset as HutubsDataset
+from .barilan import DechorateDataset as DechorateDataset
 from .base import _get_dataset_classes as _get_dataset_classes
 from .esat import MyriadDataset as MyriadDataset
 from .iks import MirdDataset as MirdDataset
-from .inria import DechorateDataset as DechorateDataset
 from .ista import MiracleDataset as MiracleDataset
 from .ista import SrirachaDataset as SrirachaDataset
 from .sonicom import AriDataset as AriDataset

@@ -2,8 +2,8 @@
 
 import pytest
 
-from irdl import inria, sonicom
-from irdl.inria import DechorateDataset
+from irdl import barilan, sonicom
+from irdl.barilan import DechorateDataset
 
 
 def test_dechorate_validates_sonicom_selectors():
@@ -51,7 +51,7 @@ def test_dechorate_raw_downloads_only_zenodo_rirs(monkeypatch, tmp_path):
         captured.append(filename)
         return str(tmp_path / filename)
 
-    monkeypatch.setattr(inria, "_pooch_from_doi", fake_pooch_from_doi)
-    monkeypatch.setattr(inria, "_fetch", fake_fetch)
+    monkeypatch.setattr(barilan, "_pooch_from_doi", fake_pooch_from_doi)
+    monkeypatch.setattr(barilan, "_fetch", fake_fetch)
     assert dataset._download(tmp_path) == tmp_path / "dEchorate_rirs_gzip7.hdf5"
     assert captured == ["dEchorate_rirs_gzip7.hdf5"]
