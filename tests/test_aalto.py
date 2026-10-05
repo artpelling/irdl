@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from irdl import aalto
-from irdl.aalto import MultiRoomTransitionDataset
+from irdl.aalto import MrtdDataset
 
 
 @pytest.mark.parametrize(
@@ -18,9 +18,7 @@ from irdl.aalto import MultiRoomTransitionDataset
 )
 def test_mrtd_source_filename(environment, receiver, loudspeaker, expected):
     """Build provider filenames from meaningful public parameters."""
-    result = MultiRoomTransitionDataset()._source_filename(
-        environment=environment, receiver=receiver, loudspeaker=loudspeaker
-    )
+    result = MrtdDataset()._source_filename(environment=environment, receiver=receiver, loudspeaker=loudspeaker)
     assert result == expected
 
 
@@ -36,7 +34,7 @@ def test_mrtd_source_filename(environment, receiver, loudspeaker, expected):
 def test_mrtd_rejects_invalid_parameters(parameters, message):
     """Reject values that cannot identify an MRTD provider file."""
     with pytest.raises(ValueError, match=message):
-        MultiRoomTransitionDataset()._validate_params(**parameters)
+        MrtdDataset()._validate_params(**parameters)
 
 
 def test_mrtd_download_fetches_requested_native_sofa(monkeypatch, tmp_path):
@@ -55,7 +53,7 @@ def test_mrtd_download_fetches_requested_native_sofa(monkeypatch, tmp_path):
 
     monkeypatch.setattr(aalto, "_pooch_from_doi", fake_pooch_from_doi)
     monkeypatch.setattr(aalto, "_fetch", fake_fetch)
-    result = MultiRoomTransitionDataset()._download(tmp_path, environment="workshops", receiver="zoom", loudspeaker=3)
+    result = MrtdDataset()._download(tmp_path, environment="workshops", receiver="zoom", loudspeaker=3)
     assert result == tmp_path / "workshops_zoom_ls_3.sofa"
     assert calls == [
         ("repository", "10.5281/zenodo.13341566", tmp_path),
@@ -72,5 +70,5 @@ def test_mrtd_download_reuses_cached_file(monkeypatch, tmp_path):
         "_pooch_from_doi",
         lambda *_args, **_kwargs: pytest.fail("repository should not be queried"),
     )
-    result = MultiRoomTransitionDataset()._download(tmp_path, environment="offices", receiver="kemar", loudspeaker=1)
+    result = MrtdDataset()._download(tmp_path, environment="offices", receiver="kemar", loudspeaker=1)
     assert result == provider_path

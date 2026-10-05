@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `BrasRs8Dataset` for the BRAS-RS8 room impulse response dataset
 - `MyriadDataset` for selectable MYRiAD room and microphone-array responses
-- `MultiRoomTransitionDataset`  by [@Akinesia112](https://github.com/Akinesia112)
+- `MrtdDataset`  by [@Akinesia112](https://github.com/Akinesia112)
 
 ### Changed
 - Reorganized dataset implementations by institution while retaining the top-level dataset API

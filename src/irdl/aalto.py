@@ -10,7 +10,7 @@ from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
 
 
-class MultiRoomTransitionDataset(BaseDataset):
+class MrtdDataset(BaseDataset):
     """Download the MRTD dataset from Zenodo."""
 
     name = "mrtd"

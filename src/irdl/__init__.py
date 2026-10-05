@@ -2,7 +2,7 @@
 
 import sys as _sys
 
-from .aalto import MultiRoomTransitionDataset as MultiRoomTransitionDataset
+from .aalto import MrtdDataset as MrtdDataset
 from .akt import BrasRs8Dataset as BrasRs8Dataset
 from .akt import FabianDataset as FabianDataset
 from .akt import HutubsDataset as HutubsDataset
