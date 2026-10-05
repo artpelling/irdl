@@ -62,8 +62,8 @@ def test_meshgrid_downloads_selected_zenodo_file(monkeypatch, tmp_path):
     ]
 
 
-def test_meshgrid_ingest_streams_matlab_layout_and_reciprocal_geometry(tmp_path):
-    """Map each grid microphone location to a reciprocal SOFA source position."""
+def test_meshgrid_ingest_streams_loudspeaker_sources_and_microphone_receivers(tmp_path):
+    """Preserve the physical loudspeaker and moving microphone-grid geometry."""
     provider = tmp_path / "A_ir_16k_sp1.h5"
     responses, grid = _write_meshgrid_hdf5(provider)
     sofa_path = tmp_path / "meshgrid.sofa"
@@ -71,10 +71,10 @@ def test_meshgrid_ingest_streams_matlab_layout_and_reciprocal_geometry(tmp_path)
     Meshgrid3dDataset()._ingest(provider, sofa_path)
     sofa = sf.read_sofa(sofa_path, verify=False)
 
-    assert sofa.Data_IR.shape == (4, 1, 5, 1)
-    np.testing.assert_allclose(sofa.Data_IR[:, 0, :, 0], responses)
-    np.testing.assert_allclose(sofa.SourcePosition, grid)
-    np.testing.assert_allclose(sofa.ListenerPosition, grid)
-    np.testing.assert_allclose(sofa.ReceiverPosition[:, :, 0], [[5.54, 0.94, 1.42]])
+    assert sofa.Data_IR.shape == (1, 4, 5, 1)
+    np.testing.assert_allclose(sofa.Data_IR[0, :, :, 0], responses)
+    np.testing.assert_allclose(sofa.SourcePosition, [[5.54, 0.94, 1.42]])
+    np.testing.assert_allclose(sofa.ReceiverPosition[:, :, 0], grid)
     assert sofa.Data_SamplingRate == _SAMPLING_RATE
     assert sofa.GLOBAL_License == "CC BY 4.0"
+    Meshgrid3dDataset()._verify_sofa_convention(sofa_path)

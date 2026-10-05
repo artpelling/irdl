@@ -83,7 +83,7 @@ class Meshgrid3dDataset(IstaBaseDataset):
         room_corners[:] = 0.0
 
     def _ingest(self, ingest_path: Path, sofa_path: Path, **_dataset_kwargs) -> Path:
-        """Stream a MATLAB HDF5 provider artifact into a reciprocal SOFA representation."""
+        """Stream a MATLAB HDF5 provider artifact into a physical SOFA representation."""
         chunk_size = int(self._chunk_size)
         if chunk_size <= 0:
             msg = "_chunk_size must be > 0"
@@ -110,11 +110,11 @@ class Meshgrid3dDataset(IstaBaseDataset):
             with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
                 self._create_default_variables(
                     sofa,
-                    m=measurements,
-                    r=1,
+                    m=1,
+                    r=measurements,
                     n=samples,
                     has_humidity=False,
-                    receiver_position=speaker_position.reshape(1, 3),
+                    receiver_position=grid_positions,
                     sampling_rate=sampling_rate,
                 )
                 self._create_room_variables(sofa)
@@ -124,26 +124,22 @@ class Meshgrid3dDataset(IstaBaseDataset):
                 sofa.AuthorContact = "yi.ren@uec.ac.jp"
                 sofa.License = "CC BY 4.0"
                 sofa.RoomLocation = "The University of Electro-Communications, Tokyo, Japan"
-                sofa.ListenerShortName = "Measurement microphone"
-                sofa.ListenerDescription = "Microphone traversed on a 2 cm 3D grid"
-                sofa.ReceiverShortName = "Loudspeaker"
-                sofa.ReceiverDescription = "Cambridge Audio MINX MIN12 loudspeaker"
-                sofa.SourceShortName = "Virtual reciprocal source"
-                sofa.SourceDescription = "Reciprocal representation of the moving measurement microphone"
-                sofa.Comment = (
-                    "The physical source is the fixed loudspeaker at ReceiverPosition. "
-                    "SourcePosition represents the moving microphone grid by acoustic reciprocity."
-                )
+                sofa.ListenerShortName = "Measurement microphone array"
+                sofa.ListenerDescription = "Microphone positions sampled on a 2 cm 3D grid"
+                sofa.ReceiverShortName = "Measurement microphone"
+                sofa.ReceiverDescription = "Microphone traversed on a 2 cm 3D grid"
+                sofa.SourceShortName = "Loudspeaker"
+                sofa.SourceDescription = "Cambridge Audio MINX MIN12 loudspeaker"
+                sofa.Comment = "Each receiver position is one microphone location on the measured 3D grid."
                 sofa.variables["RoomVolume"][:] = np.prod(room_size)
                 sofa.variables["RoomCornerB"][:] = room_size
                 sofa.variables["EmitterPosition"][:] = speaker_position.reshape(1, 3, 1)
-                sofa.variables["ListenerPosition"][:] = grid_positions
-                sofa.variables["SourcePosition"][:] = grid_positions
+                sofa.variables["SourcePosition"][:] = speaker_position.reshape(1, 3)
                 sofa.variables["SpeedOfSound"][:] = speed_of_sound
 
                 data_ir = sofa.variables["Data.IR"]
                 for row_slice in _chunk_slices(measurements, chunk_size):
-                    data_ir[row_slice, 0, :, 0] = rir[row_slice].astype(np.float64)
+                    data_ir[0, row_slice, :, 0] = rir[row_slice].astype(np.float64)
 
         _preserve_permissions(ingest_path, sofa_path)
         return sofa_path
