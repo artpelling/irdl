@@ -1,6 +1,7 @@
 """Tests for ISTA SOFA stream writing and payload checks."""
 
 import shutil
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from threading import get_ident
 from unittest.mock import MagicMock, Mock
@@ -128,6 +129,81 @@ def test_sriracha_payload_verification_rejects_changed_full_plane(tmp_path, vari
 
     with pytest.raises(ValueError, match=f"checksum differs from SRIRACHA split data: {variable_name}"):
         dataset._verify_payload(sofa_path, provider_dir, scenario="SR1", dataset_split=None)
+
+
+@pytest.mark.parametrize(
+    ("workers", "parallel_default", "available_gib"),
+    [(None, False, 8), (None, True, 8), (None, True, 0), (1, False, 8), (2, False, 8), (4, False, 8)],
+)
+def test_sriracha_checksum_uses_independent_spawned_readers(
+    tmp_path, monkeypatch, workers, parallel_default, available_gib
+):
+    """Parallel checksum readers use fresh processes and validate the entire plane."""
+    provider_dir = tmp_path / "provider"
+    provider_dir.mkdir()
+    _write_sriracha_split_files(provider_dir, split_grid_size=4)
+    sofa_path = tmp_path / "SR1.sofa"
+    dataset = SrirachaDataset()
+    dataset._ingest(provider_dir, sofa_path, scenario="SR1", dataset_split=None)
+    pools = []
+
+    def pool(**kwargs):
+        pools.append(kwargs)
+        return ProcessPoolExecutor(**kwargs)
+
+    monkeypatch.setattr(ista, "ProcessPoolExecutor", pool)
+    monkeypatch.setattr(ista.os, "cpu_count", lambda: 40)
+    monkeypatch.setattr(ista.psutil, "virtual_memory", lambda: Mock(available=available_gib * 1024**3))
+    if parallel_default:
+        monkeypatch.setattr(ista, "_PARALLEL_CHECKSUM_MIN_BYTES", 0)
+    dataset._verify_payload(sofa_path, provider_dir, scenario="SR1", workers=workers)
+
+    default_workers = min(6, max(1, available_gib)) if parallel_default else 1
+    expected_workers = workers if workers is not None else default_workers
+    assert len(pools) == (expected_workers > 1)
+    if pools:
+        assert pools[0]["max_workers"] == expected_workers
+        assert pools[0]["mp_context"].get_start_method() == "spawn"
+
+
+@pytest.mark.parametrize("variable_name", ["Data.IR", "SourcePosition"])
+def test_parallel_sriracha_checksum_failure_prevents_promotion(tmp_path, monkeypatch, variable_name):
+    """Corruption in the final C4 batch cannot replace an existing artifact."""
+    provider_dir = tmp_path / "provider"
+    provider_dir.mkdir()
+    _write_sriracha_split_files(provider_dir, split_grid_size=3)
+    sofa_path = tmp_path / "retained.sofa"
+    original = b"existing Canonical SOFA Artifact"
+    sofa_path.write_bytes(original)
+    dataset = SrirachaDataset()
+    dataset._chunk_size = 1
+    verify = dataset._verify_payload
+
+    def corrupt_and_verify(staged, ingest, **kwargs):
+        with netCDF4.Dataset(staged, "a") as sofa:
+            index = (-1, 0, 0, 0) if variable_name == "Data.IR" else (-1, 0)
+            sofa.variables[variable_name][index] = -99.0
+        verify(staged, ingest, workers=2, **kwargs)
+
+    monkeypatch.setattr(dataset, "_verify_payload", corrupt_and_verify)
+    with pytest.raises(ValueError, match=f"checksum differs from SRIRACHA split data: {variable_name}"):
+        dataset._ingest(provider_dir, sofa_path, scenario="SR1", dataset_split=None)
+
+    assert sofa_path.read_bytes() == original
+    assert not list(tmp_path.glob(".retained-*"))
+
+
+@pytest.mark.parametrize("workers", [0, -1])
+def test_sriracha_checksum_rejects_invalid_workers(tmp_path, workers):
+    """An invalid worker count must not silently disable verification."""
+    provider_dir = tmp_path / "provider"
+    provider_dir.mkdir()
+    _write_sriracha_split_files(provider_dir)
+    sofa_path = tmp_path / "SR1.sofa"
+    dataset = SrirachaDataset()
+    dataset._ingest(provider_dir, sofa_path, scenario="SR1", dataset_split=None)
+    with pytest.raises(ValueError, match="Checksum workers must be > 0"):
+        dataset._verify_payload(sofa_path, provider_dir, scenario="SR1", workers=workers)
 
 
 def test_ista_ir_batch_size_limits_memory_for_long_impulse_responses():

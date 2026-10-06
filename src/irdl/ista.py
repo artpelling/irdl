@@ -11,15 +11,17 @@ import os
 import zlib
 from collections import deque
 from collections.abc import Iterable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
+from multiprocessing import get_context
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import h5py as h5
 import netCDF4
 import numpy as np
+import psutil
 
 from irdl.base import BaseDataset, DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
@@ -28,6 +30,7 @@ from irdl.sonicom import SonicomBaseDataset
 from irdl.utils import _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4
+_PARALLEL_CHECKSUM_MIN_BYTES = 1024**3
 
 
 class IstaBaseDataset(BaseDataset):
@@ -341,16 +344,17 @@ def _chunk_slices(length: int, chunk_size: int):
         yield slice(start, min(start + chunk_size, length))
 
 
-def _split_row_slices(n_split_grid: int, chunk_size: int):
-    """Map contiguous Split rows to contiguous, interleaved full-plane rows."""
+def _split_row_slices(n_split_grid: int, chunk_size: int, grid_rows: range | None = None):
+    """Map selected full-plane grid rows to contiguous, interleaved Split batches."""
     n_full_grid = 2 * n_split_grid
-    for split_row in range(n_split_grid):
-        for row, (left, right) in enumerate((("C1", "C2"), ("C3", "C4"))):
-            grid_start = (2 * split_row + row) * n_full_grid
-            for columns in _chunk_slices(n_split_grid, chunk_size):
-                src = slice(split_row * n_split_grid + columns.start, split_row * n_split_grid + columns.stop)
-                dst = slice(grid_start + 2 * columns.start, grid_start + 2 * columns.stop)
-                yield src, dst, left, right
+    for grid_row in range(n_full_grid) if grid_rows is None else grid_rows:
+        split_row, row = divmod(grid_row, 2)
+        left, right = (("C1", "C2"), ("C3", "C4"))[row]
+        grid_start = grid_row * n_full_grid
+        for columns in _chunk_slices(n_split_grid, chunk_size):
+            src = slice(split_row * n_split_grid + columns.start, split_row * n_split_grid + columns.stop)
+            dst = slice(grid_start + 2 * columns.start, grid_start + 2 * columns.stop)
+            yield src, dst, left, right
 
 
 def _interleave_rows(left: np.ndarray, right: np.ndarray) -> np.ndarray:
@@ -366,6 +370,49 @@ def _canonical_array(data: np.ndarray, dtype: np.dtype) -> np.ndarray:
     if array.ndim == 0:
         array = array.reshape(1)
     return np.ascontiguousarray(array.astype(dtype, copy=False))
+
+
+def _verify_sriracha_rows(
+    sofa_path: Path,
+    split_files: dict[str, Path],
+    n_split_grid: int,
+    split_chunk_size: int,
+    grid_rows: range,
+) -> None:
+    """Check bounded Split batches with read-only handles owned by this process."""
+    with (
+        netCDF4.Dataset(sofa_path) as sofa_dataset,
+        h5.File(split_files["C1"], "r") as c1,
+        h5.File(split_files["C2"], "r") as c2,
+        h5.File(split_files["C3"], "r") as c3,
+        h5.File(split_files["C4"], "r") as c4,
+    ):
+        handles = {"C1": c1, "C2": c2, "C3": c3, "C4": c4}
+        for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size, grid_rows):
+            left, right = handles[left_name], handles[right_name]
+            comparisons = (
+                (
+                    "Data.IR",
+                    _interleave_rows(left["data/impulse_response"][src], right["data/impulse_response"][src]),
+                    sofa_dataset.variables["Data.IR"][dst, :, :, 0],
+                    np.float32,
+                ),
+                (
+                    "SourcePosition",
+                    _interleave_rows(left["data/location/source"][src], right["data/location/source"][src]),
+                    sofa_dataset.variables["SourcePosition"][dst, :],
+                    np.float64,
+                ),
+            )
+            for variable_name, expected, actual, dtype in comparisons:
+                expected_hash = hashlib.sha256(_canonical_array(expected, np.dtype(dtype)).view(np.uint8)).hexdigest()
+                actual_hash = hashlib.sha256(_canonical_array(actual, np.dtype(dtype)).view(np.uint8)).hexdigest()
+                if expected_hash != actual_hash:
+                    msg = (
+                        f"SOFA checksum validation failed for {sofa_path}: "
+                        f"checksum differs from SRIRACHA split data: {variable_name}"
+                    )
+                    raise ValueError(msg)
 
 
 class MiracleDataset(SonicomBaseDataset, IstaBaseDataset):
@@ -656,6 +703,12 @@ class SrirachaDataset(IstaBaseDataset):
         dict or Path
             For 'pyfar' / 'numpy': dict of in-memory objects.
             For 'sofa' / 'hdf5' / 'raw': Path to file on disk.
+
+        Notes
+        -----
+        Large full-plane payloads may use spawned checksum reader processes.
+        In Python scripts, call Get inside an ``if __name__ == "__main__":``
+        guard. CLI Get already provides this guard.
         """  # noqa: D205, D403
         return cls()._get(
             scenario=scenario,
@@ -850,7 +903,10 @@ class SrirachaDataset(IstaBaseDataset):
         logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
 
-    def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **dataset_kwargs) -> None:
+    def _verify_payload(
+        self, sofa_path: Path, ingest_artifact: Path, *, workers: int | None = None, **dataset_kwargs
+    ) -> None:
+        """Check full-plane payloads in independent processes, serially for small files."""
         if not ingest_artifact.is_dir():
             super()._verify_payload(sofa_path, ingest_artifact, **dataset_kwargs)
             return
@@ -859,44 +915,44 @@ class SrirachaDataset(IstaBaseDataset):
         split_files = {
             split_name: ingest_artifact / f"{scenario}-{split_name}.h5" for split_name, _ in self._split_offsets
         }
-        logger.info(f"Validating SOFA file {sofa_path}.")
-        with (
-            logger.spin(f"Running data checksum on {sofa_path.name}..."),
-            netCDF4.Dataset(sofa_path) as sofa_dataset,
-            h5.File(split_files["C1"], "r") as c1,
-            h5.File(split_files["C2"], "r") as c2,
-            h5.File(split_files["C3"], "r") as c3,
-            h5.File(split_files["C4"], "r") as c4,
-        ):
-            handles = {"C1": c1, "C2": c2, "C3": c3, "C4": c4}
-            n_split, r, n = c1["data/impulse_response"].shape
-            n_full_grid = int(np.sqrt(len(self._split_offsets) * n_split))
-            n_split_grid = n_full_grid // 2
-            split_chunk_size = max(1, self._ir_batch_size(r, n) // 2)
-            for src, dst, left_name, right_name in _split_row_slices(n_split_grid, split_chunk_size):
-                left, right = handles[left_name], handles[right_name]
-                comparisons = (
-                    (
-                        "Data.IR",
-                        _interleave_rows(left["data/impulse_response"][src], right["data/impulse_response"][src]),
-                        sofa_dataset.variables["Data.IR"][dst, :, :, 0],
-                        np.float32,
-                    ),
-                    (
-                        "SourcePosition",
-                        _interleave_rows(left["data/location/source"][src], right["data/location/source"][src]),
-                        sofa_dataset.variables["SourcePosition"][dst, :],
-                        np.float64,
-                    ),
-                )
-                for variable_name, expected, actual, dtype in comparisons:
-                    expected_hash = hashlib.sha256(
-                        _canonical_array(expected, np.dtype(dtype)).view(np.uint8)
-                    ).hexdigest()
-                    actual_hash = hashlib.sha256(_canonical_array(actual, np.dtype(dtype)).view(np.uint8)).hexdigest()
-                    if expected_hash != actual_hash:
-                        msg = (
-                            f"SOFA checksum validation failed for {sofa_path}: "
-                            f"checksum differs from SRIRACHA split data: {variable_name}"
-                        )
-                        raise ValueError(msg)
+        with h5.File(split_files["C1"], "r") as first:
+            n_split, r, n = first["data/impulse_response"].shape
+        n_split_grid = int(np.sqrt(n_split))
+        if n_split == 0 or n_split_grid**2 != n_split:
+            msg = "SRIRACHA Splits must contain a nonempty square grid"
+            raise ValueError(msg)
+        split_chunk_size = max(1, self._ir_batch_size(r, n) // 2)
+        if workers is None:
+            # Process startup is not worthwhile for small payloads.
+            payload_bytes = len(split_files) * n_split * r * n * np.dtype(np.float64).itemsize
+            # Budget 1 GiB per reader for imported libraries, bounded batches, and HDF5 caches.
+            memory_workers = max(1, psutil.virtual_memory().available // 1024**3)
+            workers = (
+                min(6, os.cpu_count() or 1, memory_workers) if payload_bytes >= _PARALLEL_CHECKSUM_MIN_BYTES else 1
+            )
+        if workers <= 0:
+            msg = "Checksum workers must be > 0"
+            raise ValueError(msg)
+        n_full_grid = 2 * n_split_grid
+        workers = min(workers, n_full_grid)
+
+        logger.info(f"Validating SOFA file {sofa_path} with {workers} checksum workers.")
+        with logger.spin(f"Running data checksum on {sofa_path.name}..."):
+            if workers == 1:
+                _verify_sriracha_rows(sofa_path, split_files, n_split_grid, split_chunk_size, range(n_full_grid))
+                return
+            # Spawn avoids inheriting HDF5 state; only paths and row ranges cross IPC.
+            with ProcessPoolExecutor(max_workers=workers, mp_context=get_context("spawn")) as executor:
+                futures = [
+                    executor.submit(
+                        _verify_sriracha_rows,
+                        sofa_path,
+                        split_files,
+                        n_split_grid,
+                        split_chunk_size,
+                        range(worker, n_full_grid, workers),
+                    )
+                    for worker in range(workers)
+                ]
+                for future in futures:
+                    future.result()
