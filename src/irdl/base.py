@@ -21,6 +21,7 @@ import shutil
 from abc import ABC, abstractmethod
 from enum import StrEnum
 from inspect import isabstract
+from itertools import product
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlparse
@@ -561,9 +562,21 @@ output_format : str
             has_single_emitter = len(ir.shape) == _SOFA_FIR_E_DIMS and ir.shape[-1] == 1
             ir_shape = ir.shape[:-1] if has_single_emitter else ir.shape
             output_ir = data_group.create_dataset("impulse_response", shape=ir_shape, dtype=ir.dtype)
-            for start in range(0, ir_shape[0], chunk_size):
-                row_slice = slice(start, min(start + chunk_size, ir_shape[0]))
-                output_ir[row_slice] = ir[row_slice, :, :, 0] if has_single_emitter else ir[row_slice]
+            # Follow stored tiles: the large axis may be receivers rather than measurements.
+            chunk_shape = ir.chunking()
+            if not isinstance(chunk_shape, list):
+                chunk_shape = [chunk_size, *ir.shape[1:]]
+            starts = product(*(range(0, size, step) for size, step in zip(ir.shape, chunk_shape, strict=True)))
+            for offsets in starts:
+                selection = tuple(
+                    slice(start, min(start + step, size))
+                    for start, size, step in zip(offsets, ir.shape, chunk_shape, strict=True)
+                )
+                data = ir[selection]
+                if has_single_emitter:
+                    selection = selection[:-1]
+                    data = data[..., 0]
+                output_ir[selection] = data
 
             loc_group = data_group.create_group("location")
             loc_group.create_dataset("source", data=sofa.variables["SourcePosition"][:])
