@@ -13,9 +13,8 @@ import numpy as np
 
 from irdl.base import DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
-from irdl.ista import IstaBaseDataset, _chunk_slices
+from irdl.ista import IstaBaseDataset, _canonical_array, _chunk_slices, _write_encoded_ir_chunks
 from irdl.logging import logger
-from irdl.utils import _preserve_permissions
 
 _CARTESIAN_DIMENSIONS = 3
 _HDF5_MATRIX_DIMENSIONS = 2
@@ -89,11 +88,14 @@ class Meshgrid3dDataset(IstaBaseDataset):
             msg = "_chunk_size must be > 0"
             raise ValueError(msg)
 
-        sofa_path.parent.mkdir(parents=True, exist_ok=True)
-        with h5.File(ingest_path, "r") as hdf5:
+        with self._staged_sofa(ingest_path, sofa_path) as staged, h5.File(ingest_path, "r") as hdf5:
             rir = hdf5["rir"]
             grid = hdf5["grid"]
-            if rir.ndim != _HDF5_MATRIX_DIMENSIONS or grid.shape != (_CARTESIAN_DIMENSIONS, rir.shape[0]):
+            if (
+                rir.ndim != _HDF5_MATRIX_DIMENSIONS
+                or not all(rir.shape)
+                or grid.shape != (_CARTESIAN_DIMENSIONS, rir.shape[0])
+            ):
                 msg = f"Expected MATLAB-layout /rir and /grid datasets, got {rir.shape} and {grid.shape}"
                 raise ValueError(msg)
             speaker_position = np.asarray(hdf5.attrs["sp_pos"], dtype=float).reshape(-1)
@@ -103,11 +105,13 @@ class Meshgrid3dDataset(IstaBaseDataset):
                 raise ValueError(msg)
 
             measurements, samples = rir.shape
+            receiver_chunk = min(chunk_size, measurements, max(1, 1024**2 // (samples * 8)))
+            sample_chunk = min(samples, 1024**2 // (receiver_chunk * 8))
             grid_positions = np.asarray(grid, dtype=float).T
             sampling_rate = float(np.asarray(hdf5.attrs["fs"]).item())
             speed_of_sound = float(np.asarray(hdf5.attrs["c"]).item())
             logger.info(f"Streaming {measurements} grid positions with {samples} samples to SOFA {sofa_path}.")
-            with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
+            with netCDF4.Dataset(staged, "w", format="NETCDF4") as sofa:
                 self._create_default_variables(
                     sofa,
                     m=1,
@@ -116,6 +120,7 @@ class Meshgrid3dDataset(IstaBaseDataset):
                     has_humidity=False,
                     receiver_position=grid_positions,
                     sampling_rate=sampling_rate,
+                    ir_chunks=(1, receiver_chunk, sample_chunk, 1),
                 )
                 self._create_room_variables(sofa)
                 sofa.Title = "3D Meshgrid Room Impulse Response Dataset"
@@ -137,9 +142,38 @@ class Meshgrid3dDataset(IstaBaseDataset):
                 sofa.variables["SourcePosition"][:] = speaker_position.reshape(1, 3)
                 sofa.variables["SpeedOfSound"][:] = speed_of_sound
 
-                data_ir = sofa.variables["Data.IR"]
-                for row_slice in _chunk_slices(measurements, chunk_size):
-                    data_ir[0, row_slice, :, 0] = rir[row_slice].astype(np.float64)
+            # Close netCDF4 before the shared writer opens the staged HDF5 artifact.
+            with h5.File(staged, "r+") as sofa:
+                chunks = (
+                    ((0, receivers.start, samples_slice.start, 0), rir[receivers, samples_slice])
+                    for receivers in _chunk_slices(measurements, receiver_chunk)
+                    for samples_slice in _chunk_slices(samples, sample_chunk)
+                )
+                _write_encoded_ir_chunks(sofa["Data.IR"], chunks)
 
-        _preserve_permissions(ingest_path, sofa_path)
         return sofa_path
+
+    def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **_dataset_kwargs) -> None:
+        """Compare bounded receiver batches exactly before promoting the SOFA artifact."""
+
+        def compare(name, expected, actual):
+            dtype = np.dtype(np.float64)
+            expected = _canonical_array(expected, dtype).view(np.uint8)
+            actual = _canonical_array(actual, dtype).view(np.uint8)
+            if not np.array_equal(expected, actual):
+                msg = f"Meshgrid payload mismatch: {name}"
+                raise ValueError(msg)
+
+        with h5.File(ingest_artifact, "r") as source, netCDF4.Dataset(sofa_path) as sofa:
+            rir = source["rir"]
+            if sofa.variables["Data.IR"].shape != (1, *rir.shape, 1):
+                msg = "Meshgrid payload mismatch: Data.IR shape"
+                raise ValueError(msg)
+            for receivers in _chunk_slices(rir.shape[0], self._ir_batch_size(1, rir.shape[1])):
+                compare("Data.IR", rir[receivers], sofa.variables["Data.IR"][0, receivers, :, 0])
+                compare(
+                    "ReceiverPosition", source["grid"][:, receivers].T, sofa.variables["ReceiverPosition"][receivers]
+                )
+            compare("SourcePosition", source.attrs["sp_pos"], sofa.variables["SourcePosition"][:])
+            compare("EmitterPosition", source.attrs["sp_pos"], sofa.variables["EmitterPosition"][:])
+            compare("Data.SamplingRate", source.attrs["fs"], sofa.variables["Data.SamplingRate"][:])

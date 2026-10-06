@@ -397,15 +397,16 @@ def test_raw_chunk_writer_rejects_incompatible_storage(tmp_path, dtype, zlib, sh
 
 
 @pytest.mark.parametrize("dtype", ["<f8", ">f8"])
-def test_chunk_encoder_preserves_storage_byte_order_and_edge_fill(dtype):
+@pytest.mark.parametrize("receivers", [2, 3])
+def test_chunk_encoder_preserves_storage_byte_order_and_edge_fill(dtype, receivers):
     """Raw encoding preserves signed zero/nonfinite values and pads the sample tail."""
     data = np.array([[-0.0, np.inf, np.nan], [1.5, -np.inf, 0.0]], dtype=np.float32)
     storage = np.dtype(dtype)
-    encoded = ista._encode_ir_chunk(data, (1, 2, 4, 1), storage, 99.0, 4)
+    encoded = ista._encode_ir_chunk(data, (1, receivers, 4, 1), storage, 99.0, 4)
     shuffled = np.frombuffer(ista.zlib.decompress(encoded), dtype=np.uint8)
     decoded = shuffled.reshape(storage.itemsize, -1).T.copy().reshape(-1)
-    expected = np.full((2, 4), 99.0, dtype=storage)
-    expected[:, :3] = data
+    expected = np.full((receivers, 4), 99.0, dtype=storage)
+    expected[:2, :3] = data
     np.testing.assert_array_equal(decoded, expected.view(np.uint8).reshape(-1))
 
 

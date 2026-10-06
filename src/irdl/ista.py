@@ -118,46 +118,19 @@ class IstaBaseDataset(BaseDataset):
     def _write_ir_chunks(
         self, sofa_path: Path, batches: Iterable[tuple[int, np.ndarray]], *, workers: int | None = None
     ) -> None:
-        """Encode owned IR chunks in workers; keep every HDF5 call on this thread."""
-        workers = min(6, os.cpu_count() or 1) if workers is None else workers
-        if workers <= 0:
-            msg = "Compression workers must be > 0"
-            raise ValueError(msg)
-        with h5.File(sofa_path, "r+") as sofa, ThreadPoolExecutor(max_workers=workers) as executor:
+        """Adapt streamed measurement batches to the shared compressed-chunk writer."""
+        with h5.File(sofa_path, "r+") as sofa:
             ir = sofa["Data.IR"]
-            creation = ir.id.get_create_plist()
-            filters = tuple(creation.get_filter(index)[0] for index in range(creation.get_nfilters()))
-            if (
-                ir.ndim != _SOFA_FIR_E_DIMS
-                or filters != (h5.h5z.FILTER_SHUFFLE, h5.h5z.FILTER_DEFLATE)
-                or ir.chunks != (1, ir.shape[1], ir.chunks[2], 1)
-                or ir.dtype.kind != "f"
-                or ir.dtype.itemsize != np.dtype(np.float64).itemsize
-            ):
-                msg = "Threaded IR encoding requires float64, single-measurement chunks with shuffle then gzip"
-                raise ValueError(msg)
-            pending = deque()
-            encoding = (ir.chunks, ir.dtype, ir.fillvalue, ir.compression_opts)
-            try:
+
+            def chunks():
                 for first_row, batch in batches:
                     for row, measurement in enumerate(batch):
-                        for samples in _chunk_slices(measurement.shape[1], ir.chunks[2]):
-                            offset = (first_row + row, 0, samples.start, 0)
-                            # Own each submitted buffer; no views retaining a whole streaming batch.
-                            data = np.array(measurement[:, samples], copy=True, order="C")
-                            if workers == 1:
-                                ir.id.write_direct_chunk(offset, _encode_ir_chunk(data, *encoding), filter_mask=0)
-                            else:
-                                pending.append((offset, executor.submit(_encode_ir_chunk, data, *encoding)))
-                                if len(pending) >= 2 * workers:
-                                    destination, future = pending.popleft()
-                                    ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
-                while pending:
-                    destination, future = pending.popleft()
-                    ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
-            finally:
-                for _, future in pending:
-                    future.cancel()
+                        for receivers in _chunk_slices(measurement.shape[0], ir.chunks[1]):
+                            for samples in _chunk_slices(measurement.shape[1], ir.chunks[2]):
+                                offset = (first_row + row, receivers.start, samples.start, 0)
+                                yield offset, measurement[receivers, samples]
+
+            _write_encoded_ir_chunks(ir, chunks(), workers=workers)
 
     def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **_dataset_kwargs) -> None:
         """Verify that a streamed ISTA SOFA matches its HDF5 ingest artifact."""
@@ -232,8 +205,9 @@ class IstaBaseDataset(BaseDataset):
         has_humidity: bool,
         receiver_position: np.ndarray,
         sampling_rate: float,
+        ir_chunks: tuple[int, int, int, int] | None = None,
     ) -> None:
-        """Create the common ISTA SOFA skeleton and fill shared defaults."""
+        """Create the common SOFA skeleton with a caller-selected IR chunk layout."""
         for name, size in {"M": m, "R": r, "N": n, "E": 1, "C": 3, "I": 1}.items():
             sofa.createDimension(name, size)
 
@@ -273,7 +247,7 @@ class IstaBaseDataset(BaseDataset):
             ("M", "R", "N", "E"),
             zlib=True,
             complevel=4,
-            chunksizes=(1, r, samples_per_chunk, 1),
+            chunksizes=ir_chunks or (1, r, samples_per_chunk, 1),
         )
         source = sofa.createVariable("SourcePosition", "f8", ("M", "C"))
         source_view = sofa.createVariable("SourceView", "f8", ("M", "C"))
@@ -323,13 +297,58 @@ class IstaBaseDataset(BaseDataset):
             humidity[:] = 0.0
 
 
+def _write_encoded_ir_chunks(
+    ir: h5.Dataset,
+    chunks: Iterable[tuple[tuple[int, int, int, int], np.ndarray]],
+    *,
+    workers: int | None = None,
+) -> None:
+    """Encode owned buffers with bounded workers; write offsets only on the caller thread."""
+    workers = min(6, os.cpu_count() or 1) if workers is None else workers
+    if workers <= 0:
+        msg = "Compression workers must be > 0"
+        raise ValueError(msg)
+    creation = ir.id.get_create_plist()
+    filters = tuple(creation.get_filter(index)[0] for index in range(creation.get_nfilters()))
+    if (
+        ir.ndim != _SOFA_FIR_E_DIMS
+        or filters != (h5.h5z.FILTER_SHUFFLE, h5.h5z.FILTER_DEFLATE)
+        or ir.chunks[0] != 1
+        or ir.chunks[3] != 1
+        or ir.dtype.kind != "f"
+        or ir.dtype.itemsize != np.dtype(np.float64).itemsize
+    ):
+        msg = "Threaded IR encoding requires float64, single-measurement chunks with shuffle then gzip"
+        raise ValueError(msg)
+    pending = deque()
+    encoding = (ir.chunks, ir.dtype, ir.fillvalue, ir.compression_opts)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        try:
+            for offset, chunk in chunks:
+                # Own each submitted buffer; no views retaining a whole streaming batch.
+                data = np.array(chunk, copy=True, order="C")
+                if workers == 1:
+                    ir.id.write_direct_chunk(offset, _encode_ir_chunk(data, *encoding), filter_mask=0)
+                else:
+                    pending.append((offset, executor.submit(_encode_ir_chunk, data, *encoding)))
+                    if len(pending) >= 2 * workers:
+                        destination, future = pending.popleft()
+                        ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+            while pending:
+                destination, future = pending.popleft()
+                ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+        finally:
+            for _, future in pending:
+                future.cancel()
+
+
 def _encode_ir_chunk(data: np.ndarray, shape: tuple[int, ...], dtype: np.dtype, fill_value: float, level: int) -> bytes:
     """Apply the HDF5 byte-shuffle and deflate filters, including edge padding."""
     if data.shape == shape[1:3]:
         chunk = np.asarray(data, dtype=dtype, order="C")
     else:
         chunk = np.full(shape[1:3], fill_value, dtype=dtype)
-        chunk[:, : data.shape[1]] = data
+        chunk[: data.shape[0], : data.shape[1]] = data
     shuffled = chunk.view(np.uint8).reshape(-1, dtype.itemsize).T.copy().tobytes()
     return zlib.compress(shuffled, level)
 
