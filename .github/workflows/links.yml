@@ -23,6 +23,7 @@ jobs:
         uses: lycheeverse/lychee-action@v2.7.0
         with:
           # Check all markdown, html and reStructuredText files in repo (default)
-          args: --root-dir $(pwd) --no-progress './**/*.md' './**/*.html' './**/*.rst' ${{ inputs.extra_args }}
+          args: --root-dir $(pwd) --no-progress --max-retries 3 './**/*.md' './**/*.html' './**/*.rst' ${{ inputs.extra_args }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fail: true
           failIfEmpty: false
