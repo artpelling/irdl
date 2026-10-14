@@ -12,13 +12,14 @@ Dataset modules
    :caption: Core Python modules
    :toctree: ../_autosummary
 
-   aalto
-   akt
    base
-   esat
-   iks
-   ista
-   sonicom
+   datasets.aalto
+   datasets.akt
+   datasets.barilan
+   datasets.esat
+   datasets.iks
+   datasets.ista
+   datasets.sonicom
 
 Registry
 --------

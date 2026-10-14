@@ -1,6 +1,7 @@
 """Datasets from the Aalto Acoustics Lab, Espoo, Finland.
 
-Currently this module hosts MRTD, the Multi Room Transition Dataset.
+Currently this module hosts:
+- MRTD: Multi-Room Transition Dataset for Blind Estimation of Energy Decay.
 """
 
 from pathlib import Path

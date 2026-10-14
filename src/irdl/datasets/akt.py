@@ -12,9 +12,9 @@ from pathlib import Path
 from zipfile import ZipFile
 
 from irdl.base import BaseDataset, DatasetCategory
+from irdl.datasets.sonicom import SonicomBaseDataset
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
-from irdl.sonicom import SonicomBaseDataset
 
 
 class AKTZipBaseDataset(BaseDataset):

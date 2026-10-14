@@ -6,8 +6,8 @@ from pathlib import Path
 import h5py
 import numpy as np
 
-from irdl import sonicom
-from irdl.ista import MiracleDataset, SrirachaDataset
+from irdl.datasets import sonicom
+from irdl.datasets.ista import MiracleDataset, SrirachaDataset
 
 
 def _assert_permissions_preserved(source_mode: int, target_path: Path) -> None:

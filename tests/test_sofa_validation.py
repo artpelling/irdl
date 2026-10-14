@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 import sofar as sf
 
-from irdl.ista import SrirachaDataset
+from irdl.datasets.ista import SrirachaDataset
 
 
 class TinyChunkSrirachaDataset(SrirachaDataset):

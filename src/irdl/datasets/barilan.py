@@ -1,13 +1,14 @@
 """Datasets from Bar-Ilan University, Ramat Gan, Israel.
 
-Currently this module hosts dEchorate.
+Currently this module hosts:
+- dEchorate: A Calibrated Room Impulse Response Database for Echo-aware Signal Processing.
 """
 
 from pathlib import Path
 
 from irdl.base import BaseDataset, DatasetCategory
+from irdl.datasets.sonicom import SonicomBaseDataset
 from irdl.downloader import _fetch, _pooch_from_doi
-from irdl.sonicom import SonicomBaseDataset
 
 
 class DechorateDataset(SonicomBaseDataset, BaseDataset):
