@@ -15,5 +15,6 @@ from .datasets.ista import SrirachaDataset as SrirachaDataset
 from .datasets.sonicom import AriDataset as AriDataset
 from .datasets.sonicom import CipicDataset as CipicDataset
 from .datasets.sonicom import SadieDataset as SadieDataset
+from .datasets.fraunhofer import MpRirDataset as MpRirDataset
 
 __all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
