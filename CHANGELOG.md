@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share bounded IR compression and writing across MIRACLE, SRIRACHA, and 3D Meshgrid while keeping Dataset-specific metadata and reformatting separate
 - Bound SOFA-to-HDF5 IR reads by stored chunks and byte size, including single-measurement datasets with many receivers
 - Moved Dataset implementation modules into the `irdl.datasets` subpackage (e.g. `irdl.sonicom` -> `irdl.datasets.sonicom`); top-level imports such as `irdl.CipicDataset` are unchanged
+### Added
+- `MpRirDataset` for the MP-RIR room impulse responses measured on a 3D spatial grid
 
 ---
 
