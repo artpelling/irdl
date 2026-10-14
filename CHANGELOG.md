@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Moved Dataset implementation modules into the `irdl.datasets` subpackage (e.g. `irdl.sonicom` -> `irdl.datasets.sonicom`); top-level imports such as `irdl.CipicDataset` are unchanged
+
 ---
 
 ## [1.0.0b5] - 2026-09-08

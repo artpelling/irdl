@@ -2,8 +2,8 @@
 
 import pytest
 
-from irdl import barilan, sonicom
-from irdl.barilan import DechorateDataset
+from irdl.datasets import barilan, sonicom
+from irdl.datasets.barilan import DechorateDataset
 
 
 def test_dechorate_validates_sonicom_selectors():

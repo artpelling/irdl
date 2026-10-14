@@ -1,6 +1,7 @@
 """Datasets from the Institute of Communication Systems, RWTH Aachen University, Aachen, Germany.
 
-Currently this module hosts MIRD, the Multi-Channel Impulse Response Database.
+Currently this module hosts:
+- MIRD: Multi-Channel Impulse Response Database.
 """
 
 from pathlib import Path

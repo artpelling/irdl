@@ -9,8 +9,8 @@ import pytest
 import sofar as sf
 from scipy.io import savemat
 
-from irdl import iks
-from irdl.iks import MirdDataset
+from irdl.datasets import iks
+from irdl.datasets.iks import MirdDataset
 from irdl.utils import load_hash_registry
 
 SELECTORS = {"t60": 0.16, "spacing": 8, "distance": "both", "remove_delay": True}

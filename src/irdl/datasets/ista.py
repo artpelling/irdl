@@ -15,9 +15,9 @@ import netCDF4
 import numpy as np
 
 from irdl.base import BaseDataset, DatasetCategory
+from irdl.datasets.sonicom import SonicomBaseDataset
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
-from irdl.sonicom import SonicomBaseDataset
 from irdl.utils import _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4

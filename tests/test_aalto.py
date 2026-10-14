@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from irdl import aalto
-from irdl.aalto import MrtdDataset
+from irdl.datasets import aalto
+from irdl.datasets.aalto import MrtdDataset
 
 
 @pytest.mark.parametrize(

@@ -6,7 +6,7 @@ import pytest
 import sofar as sf
 
 from irdl.base import BaseDataset
-from irdl.ista import IstaBaseDataset
+from irdl.datasets.ista import IstaBaseDataset
 
 
 class TestBaseDatasetAbstract:
