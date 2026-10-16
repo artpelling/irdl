@@ -162,7 +162,7 @@ class MpRirDataset(BaseDataset):
             sofa.ListenerShortName = "Vertical microphone array"
             sofa.ListenerDescription = (
                 "Eight microphones on a vertical rod with 15 cm spacing, moved by a robot on a 15 cm grid. "
-                "ListenerPosition is the foot of the rod on the floor."
+                "ReceiverPosition holds the absolute microphone positions of each measurement."
             )
             sofa.ReceiverShortName = "DPA 4061"
             sofa.ReceiverDescription = "DPA 4061 miniature omni-directional lavalier microphone"
@@ -176,13 +176,12 @@ class MpRirDataset(BaseDataset):
                 f"of all measured RIRs. {delay_comment}"
             )
 
-            listener = np.column_stack((mic_positions[:, 0, :2], np.zeros(m)))
-            receiver = np.column_stack((np.zeros((r, 2)), mic_positions[0, :, 2]))[..., np.newaxis]
             variables = {
-                "ListenerPosition": (("M", "C"), listener, True),
+                "ListenerPosition": (("M", "C"), np.zeros((m, 3)), True),
                 "ListenerView": (("I", "C"), [[1.0, 0.0, 0.0]], True),
                 "ListenerUp": (("I", "C"), [[0.0, 0.0, 1.0]], False),
-                "ReceiverPosition": (("R", "C", "I"), receiver, True),
+                # absolute microphone positions per measurement, (M, R, C) -> (R, C, M)
+                "ReceiverPosition": (("R", "C", "M"), mic_positions.transpose(1, 2, 0), True),
                 "SourcePosition": (("M", "C"), np.tile(source_position, (m, 1)), True),
                 "SourceView": (("I", "C"), [[np.cos(azimuth), np.sin(azimuth), 0.0]], True),
                 "SourceUp": (("I", "C"), [[0.0, 0.0, 1.0]], False),
