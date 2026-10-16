@@ -81,7 +81,7 @@ def test_mprir_downloads_source_with_shared_files(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("remove_delay", [True, False])
 def test_mprir_ingest_reconstructs_grid_and_delay(provider_dir, tmp_path, remove_delay):
-    """Write a SingleRoomSRIR SOFA whose listener and receiver positions recover Mxyz."""
+    """Write a SingleRoomSRIR SOFA whose receiver positions recover Mxyz."""
     dataset = MpRirDataset()
     selectors = SELECTORS | {"remove_delay": remove_delay}
     ingest_path = tmp_path / "ingest" / dataset._source_filename(**selectors)
@@ -97,8 +97,7 @@ def test_mprir_ingest_reconstructs_grid_and_delay(provider_dir, tmp_path, remove
     np.testing.assert_array_equal(sofa.Data_IR, rirs[:, :, start:])
     np.testing.assert_array_equal(sofa.Data_Delay, np.full((1, 8), T_GUARD + T_SYSTEM - start))
     assert sofa.Data_SamplingRate == FS
-    np.testing.assert_allclose(
-        sofa.ListenerPosition[:, np.newaxis] + sofa.ReceiverPosition[np.newaxis, :, :, 0], mxyz, atol=1e-6
-    )
+    np.testing.assert_array_equal(sofa.ListenerPosition, np.zeros((5, 3)))
+    np.testing.assert_allclose(sofa.ReceiverPosition.transpose(2, 0, 1), mxyz)
     np.testing.assert_allclose(sofa.SourcePosition, np.tile([5.0, 7.0, 0.725], (5, 1)))
     np.testing.assert_allclose(sofa.SourceView, [[np.cos(np.deg2rad(450)), np.sin(np.deg2rad(450)), 0.0]], atol=1e-12)
