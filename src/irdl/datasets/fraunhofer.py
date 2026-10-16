@@ -23,8 +23,6 @@ class MpRirDataset(BaseDataset):
     name = "mprir"
     doi = "10.5281/zenodo.11148712"
     _category = DatasetCategory.ROOM_IMPULSE_RESPONSES
-    # metadata needed for creation of sofa file
-    _room_volume = 138.63
 
     @classmethod
     def get(
@@ -66,14 +64,13 @@ class MpRirDataset(BaseDataset):
         delay = "" if dataset_kwargs["remove_delay"] else "-nodelay"
         return f"{dataset_kwargs['source']}{delay}.mprir"
 
-    def _provider_files(self, source: str) -> tuple[str, ...]:
-        return (f"{source}_Mrir.npy", "Mxyz.npy", "Setup.npz")
-
     def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Download the selected loudspeaker's RIRs with the shared geometry and setup files."""
         source = dataset_kwargs["source"]
+        # one folder with all three files per loudspeaker for raw export functionality
         source_dir = provider_dir / source
-        missing = [file for file in self._provider_files(source) if not (source_dir / file).exists()]
+        files = (f"{source}_Mrir.npy", "Mxyz.npy", "Setup.npz")
+        missing = [file for file in files if not (source_dir / file).exists()]
         if not missing:
             logger.info(f"MP-RIR files for {source} already cached at {source_dir}, skipping download")
             return source_dir
@@ -83,22 +80,35 @@ class MpRirDataset(BaseDataset):
             _fetch(pooch, file)
         return source_dir
 
-    def _process(self, provider_artifact: Path, ingest_path: Path, **dataset_kwargs) -> Path:
+    def _process(self, provider_artifact: Path, ingest_path: Path, **_dataset_kwargs) -> Path:
         """Promote the provider files to the ingest directory."""
         ingest_path.mkdir(parents=True, exist_ok=True)
-        for file in self._provider_files(dataset_kwargs["source"]):
-            target = ingest_path / file
+        for file in provider_artifact.iterdir():
+            target = ingest_path / file.name
             if target.exists():
                 continue
             try:
-                os.link(provider_artifact / file, target)
+                os.link(file, target)
             except OSError:
-                shutil.copy2(provider_artifact / file, target)
+                shutil.copy2(file, target)
         return ingest_path
 
-    def _ingest(self, ingest_path: Path, sofa_path: Path, **dataset_kwargs) -> Path:
+    def _ingest(self, ingest_path: Path, sofa_path: Path, **dataset_kwargs) -> Path:  # noqa: PLR0915
         """Stream the selected loudspeaker's RIRs to a SingleRoomSRIR SOFA file."""
         source = dataset_kwargs["source"]
+        remove_delay = dataset_kwargs["remove_delay"]
+        source_descriptions = {
+            "S1": 'Custom-built 8" subwoofer',
+            "S2": 'Custom-built 8" subwoofer',
+            "S3": 'Custom-built 8" subwoofer',
+            "S4": 'Custom-built 8" subwoofer',
+            "S5": "Genelec 8250A two-way near-field monitor",
+            "S6": "Neumann KH 310 three-way near-field monitor (upright)",
+            "S7": "Neumann KH 80 two-way near-field monitor",
+            "S8": "Neumann KH 80 two-way near-field monitor",
+        }
+        room_volume = 138.63
+
         rirs = np.load(ingest_path / f"{source}_Mrir.npy", mmap_mode="r")
         mic_positions = np.load(ingest_path / "Mxyz.npy").astype(np.float64)
         # Setup.npz stores dictionaries as pickled 0-d object arrays of plain numpy values.
@@ -110,26 +120,64 @@ class MpRirDataset(BaseDataset):
             polygon = np.asarray(setup["coord_polygon"], dtype=np.float64)
 
         m, r, _ = rirs.shape
-        receiver_z = mic_positions[0, :, 2]
-        same_xy = np.allclose(mic_positions[..., :2], mic_positions[:, :1, :2])
-        if not (same_xy and np.allclose(mic_positions[..., 2], receiver_z)):
-            msg = "MP-RIR microphone positions do not form vertical arrays with fixed heights"
-            raise ValueError(msg)
-
-        start = delay if dataset_kwargs["remove_delay"] else 0
+        start = delay if remove_delay else 0
         n = rirs.shape[2] - start
-        if dataset_kwargs["remove_delay"]:
+        if remove_delay:
             logger.info(f"Removing guard time and system delay ({delay} samples) ...")
+            delay_comment = f"The guard time and the measurement system delay ({delay} samples in total) were removed."
+        else:
+            delay_comment = f"The RIRs start with the guard time and the system delay ({delay} samples in total)."
+        corners = ", ".join(f"C{q}=({x:.3f}, {y:.3f})" for q, (x, y) in enumerate(polygon))
+        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
 
         sofa_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(f"Writing {m} measurements, {r} receivers, {n} samples to {sofa_path}.")
         with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
             for dimension, size in {"M": m, "R": r, "N": n, "E": 1, "C": 3, "I": 1}.items():
                 sofa.createDimension(dimension, size)
-            self._write_attributes(sofa, source, polygon, delay, remove_delay=dataset_kwargs["remove_delay"])
+
+            sofa.Conventions = "SOFA"
+            sofa.Version = "2.1"
+            sofa.SOFAConventions = "SingleRoomSRIR"
+            sofa.SOFAConventionsVersion = "1.0"
+            sofa.DataType = "FIR"
+            sofa.RoomType = "reverberant"
+            sofa.Title = f"MP-RIR loudspeaker {source}"
+            sofa.DatabaseName = "Multi-Purpose Room Impulse Response Dataset (MP-RIR)"
+            sofa.DateCreated = now
+            sofa.DateModified = now
+            sofa.APIName = "IRDL"
+            sofa.APIVersion = "1.0"
+            sofa.AuthorContact = "lukas.friede@iis.fraunhofer.de"
+            sofa.Organization = "Fraunhofer Institute for Integrated Circuits IIS"
+            sofa.License = "CC BY 4.0"
+            sofa.References = (
+                f"https://doi.org/{self.doi}; L. Friede et al., Multi-Purpose Room Impulse Response Dataset "
+                "Measured on a 3D Spatial Grid, AES Convention Paper 10702, 2024"
+            )
+            sofa.RoomDescription = (
+                f"Non-rectangular furnished room of {room_volume} cubic metres and 2.85 m height with wooden "
+                f"structures on one wall and a slanted windowed wall. Floor polygon in metres: {corners}."
+            )
+            sofa.ListenerShortName = "Vertical microphone array"
+            sofa.ListenerDescription = (
+                "Eight microphones on a vertical rod with 15 cm spacing, moved by a robot on a 15 cm grid. "
+                "ListenerPosition is the foot of the rod on the floor."
+            )
+            sofa.ReceiverShortName = "DPA 4061"
+            sofa.ReceiverDescription = "DPA 4061 miniature omni-directional lavalier microphone"
+            sofa.SourceShortName = source
+            sofa.SourceDescription = (
+                f"{source_descriptions[source]}. SourcePosition is the centre of the loudspeaker base."
+            )
+            sofa.Comment = (
+                "Coordinates are given in the room coordinate system with the origin at room corner C0. "
+                "The loudspeaker gains were aligned and all RIRs were scaled by the maximum absolute peak "
+                f"of all measured RIRs. {delay_comment}"
+            )
 
             listener = np.column_stack((mic_positions[:, 0, :2], np.zeros(m)))
-            receiver = np.column_stack((np.zeros((r, 2)), receiver_z))[..., np.newaxis]
+            receiver = np.column_stack((np.zeros((r, 2)), mic_positions[0, :, 2]))[..., np.newaxis]
             variables = {
                 "ListenerPosition": (("M", "C"), listener, True),
                 "ListenerView": (("I", "C"), [[1.0, 0.0, 0.0]], True),
@@ -139,7 +187,7 @@ class MpRirDataset(BaseDataset):
                 "SourceView": (("I", "C"), [[np.cos(azimuth), np.sin(azimuth), 0.0]], True),
                 "SourceUp": (("I", "C"), [[0.0, 0.0, 1.0]], False),
                 "EmitterPosition": (("E", "C", "I"), np.zeros((1, 3, 1)), True),
-                "Data.Delay": (("I", "R"), np.full((1, r), 0.0 if start else float(delay)), False),
+                "Data.Delay": (("I", "R"), np.full((1, r), delay - start, dtype=float), False),
             }
             for variable_name, (dimensions, values, cartesian) in variables.items():
                 variable = sofa.createVariable(variable_name, "f8", dimensions)
@@ -150,9 +198,9 @@ class MpRirDataset(BaseDataset):
             sampling_rate_var = sofa.createVariable("Data.SamplingRate", "f8", ("I",))
             sampling_rate_var.Units = "hertz"
             sampling_rate_var[:] = sampling_rate
-            room_volume = sofa.createVariable("RoomVolume", "f8", ("I",))
-            room_volume.Units = "cubic metre"
-            room_volume[:] = self._room_volume
+            room_volume_var = sofa.createVariable("RoomVolume", "f8", ("I",))
+            room_volume_var.Units = "cubic metre"
+            room_volume_var[:] = room_volume
 
             data_ir = sofa.createVariable(
                 "Data.IR", "f4", ("M", "R", "N"), zlib=True, complevel=4, chunksizes=(1, r, n)
@@ -163,63 +211,3 @@ class MpRirDataset(BaseDataset):
 
         logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
-
-    def _write_attributes(
-        self, sofa: netCDF4.Dataset, source: str, polygon: np.ndarray, delay: int, *, remove_delay: bool
-    ) -> None:
-        """Write the SingleRoomSRIR global attributes."""
-        source_descriptions = {
-            "S1": 'Custom-built 8" subwoofer',
-            "S2": 'Custom-built 8" subwoofer',
-            "S3": 'Custom-built 8" subwoofer',
-            "S4": 'Custom-built 8" subwoofer',
-            "S5": "Genelec 8250A two-way near-field monitor",
-            "S6": "Neumann KH 310 three-way near-field monitor (upright)",
-            "S7": "Neumann KH 80 two-way near-field monitor",
-            "S8": "Neumann KH 80 two-way near-field monitor",
-        }
-        now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
-        corners = ", ".join(f"C{q}=({x:.3f}, {y:.3f})" for q, (x, y) in enumerate(polygon))
-        delay_comment = (
-            f"The guard time and the measurement system delay ({delay} samples in total) were removed."
-            if remove_delay
-            else f"The RIRs start with the guard time and the measurement system delay ({delay} samples in total)."
-        )
-
-        sofa.Conventions = "SOFA"
-        sofa.Version = "2.1"
-        sofa.SOFAConventions = "SingleRoomSRIR"
-        sofa.SOFAConventionsVersion = "1.0"
-        sofa.DataType = "FIR"
-        sofa.RoomType = "reverberant"
-        sofa.Title = f"MP-RIR loudspeaker {source}"
-        sofa.DatabaseName = "Multi-Purpose Room Impulse Response Dataset (MP-RIR)"
-        sofa.DateCreated = now
-        sofa.DateModified = now
-        sofa.APIName = "IRDL"
-        sofa.APIVersion = "1.0"
-        sofa.AuthorContact = "lukas.friede@iis.fraunhofer.de"
-        sofa.Organization = "Fraunhofer Institute for Integrated Circuits IIS"
-        sofa.License = "CC BY 4.0"
-        sofa.References = (
-            f"https://doi.org/{self.doi}; L. Friede et al., Multi-Purpose Room Impulse Response Dataset "
-            "Measured on a 3D Spatial Grid, AES Convention Paper 10702, 2024"
-        )
-        sofa.RoomDescription = (
-            f"Non-rectangular furnished room of {self._room_volume} cubic metres and 2.85 m height "
-            f"with wooden structures on one wall and a slanted windowed wall. Floor polygon in metres: {corners}."
-        )
-        sofa.ListenerShortName = "Vertical microphone array"
-        sofa.ListenerDescription = (
-            "Eight microphones on a vertical rod with 15 cm spacing, moved by a robot on a 15 cm grid. "
-            "ListenerPosition is the foot of the rod on the floor."
-        )
-        sofa.ReceiverShortName = "DPA 4061"
-        sofa.ReceiverDescription = "DPA 4061 miniature omni-directional lavalier microphone"
-        sofa.SourceShortName = source
-        sofa.SourceDescription = f"{source_descriptions[source]}. SourcePosition is the centre of the loudspeaker base."
-        sofa.Comment = (
-            "Coordinates are given in the room coordinate system with the origin at room corner C0. "
-            "The loudspeaker gains were aligned and all RIRs were scaled by the maximum absolute peak "
-            f"of all measured RIRs. {delay_comment}"
-        )
