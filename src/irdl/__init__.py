@@ -9,6 +9,7 @@ from .akt import HutubsDataset as HutubsDataset
 from .barilan import DechorateDataset as DechorateDataset
 from .base import _get_dataset_classes as _get_dataset_classes
 from .esat import MyriadDataset as MyriadDataset
+from .fraunhofer import MpRirDataset as MpRirDataset
 from .iks import MirdDataset as MirdDataset
 from .ista import MiracleDataset as MiracleDataset
 from .ista import SrirachaDataset as SrirachaDataset

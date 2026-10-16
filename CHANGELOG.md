@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `MpRirDataset` for the MP-RIR room impulse responses measured on a 3D spatial grid
+
 ---
 
 ## [1.0.0b5] - 2026-09-08
