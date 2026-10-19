@@ -1,6 +1,9 @@
 """Datasets available through the SONICOM Ecosystem.
 
-Currently this module hosts ARI, CIPIC, and SADIE II.
+Currently this module hosts:
+- ARI: HRTFs from the ARI database.
+- CIPIC: The CIPIC HRTF Database.
+- SADIE II: SADIE II Database.
 """
 
 import json

@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from irdl import sonicom
-from irdl.akt import AKTZipBaseDataset, FabianDataset, HutubsDataset
-from irdl.sonicom import AriDataset, CipicDataset, SadieDataset
+from irdl.datasets import sonicom
+from irdl.datasets.akt import AKTZipBaseDataset, FabianDataset, HutubsDataset
+from irdl.datasets.sonicom import AriDataset, CipicDataset, SadieDataset
 from irdl.utils import load_hash_registry
 
 

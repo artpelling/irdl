@@ -29,14 +29,16 @@ artifact.
 Choose a module
 ----------------
 
-Datasets from the same provider (typically a university department or lab) belong in a single
-module, named after the provider's short abbreviation, rather than one file per Dataset. For
-example, ``ista.py`` hosts both MIRACLE and SRIRACHA from the Department of Engineering
-Acoustics, TU Berlin.
+Dataset modules live in the ``irdl.datasets`` subpackage (``src/irdl/datasets/``). Datasets
+from the same institution (typically a university department or lab) belong in a single module,
+named after the institution's short abbreviation, rather than one file per Dataset. For example,
+``datasets/ista.py`` hosts both MIRACLE and SRIRACHA from the Department of Engineering
+Acoustics, TU Berlin. Datasets retrieved through a shared hosting ecosystem, such as SONICOM, 
+are grouped by that ecosystem instead.
 
 Give the module a docstring naming the department/provider and listing every Dataset it hosts for example:
 
-.. literalinclude:: ../../src/irdl/ista.py
+.. literalinclude:: ../../src/irdl/datasets/ista.py
    :language: python
    :lines: 1-13
 
@@ -122,7 +124,7 @@ as part of the public API:
 
 .. code-block:: python
 
-   from .new_module import NewDataset as NewDataset
+   from .datasets.new_module import NewDataset as NewDataset
 
 The CLI is generated automatically from concrete :class:`~irdl.base.BaseDataset`
 subclasses imported by ``irdl``. Do not add hand-written CLI code for a new Dataset. The CLI
