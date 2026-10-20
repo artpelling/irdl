@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 import sofar as sf
 
+from irdl.datasets import fraunhofer
 from irdl.datasets.fraunhofer import MpRirDataset
 
 SELECTORS = {"source": "S5", "remove_delay": True}

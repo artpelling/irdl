@@ -9,12 +9,12 @@ from .datasets.akt import FabianDataset as FabianDataset
 from .datasets.akt import HutubsDataset as HutubsDataset
 from .datasets.barilan import DechorateDataset as DechorateDataset
 from .datasets.esat import MyriadDataset as MyriadDataset
+from .datasets.fraunhofer import MpRirDataset as MpRirDataset
 from .datasets.iks import MirdDataset as MirdDataset
 from .datasets.ista import MiracleDataset as MiracleDataset
 from .datasets.ista import SrirachaDataset as SrirachaDataset
 from .datasets.sonicom import AriDataset as AriDataset
 from .datasets.sonicom import CipicDataset as CipicDataset
 from .datasets.sonicom import SadieDataset as SadieDataset
-from .datasets.fraunhofer import MpRirDataset as MpRirDataset
 
 __all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
