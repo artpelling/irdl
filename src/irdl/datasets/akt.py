@@ -8,6 +8,7 @@ Currently this module hosts:
 
 """
 
+import shutil
 from pathlib import Path
 from zipfile import ZipFile
 
@@ -39,17 +40,18 @@ class AKTZipBaseDataset(BaseDataset):
         :class:`pathlib.Path`
             Path to the extracted SOFA file in the ingest directory.
         """
+        entry_name = self._source_filename(**_dataset_kwargs)
         with ZipFile(provider_artifact, "r") as zf:
             for name in zf.namelist():
-                if name.endswith(ingest_path.name):
+                if name.endswith(entry_name):
                     # Flatten the extraction (strip any nested ZIP directory)
-                    zf.getinfo(name).filename = Path(name).name
                     logger.info(f"Extracting {name} to {ingest_path.parent}")
-                    zf.extract(name, path=ingest_path.parent)
+                    with zf.open(name) as source, ingest_path.open("wb") as target:
+                        shutil.copyfileobj(source, target)
                     return ingest_path
 
             msg = (
-                f"No entry matching '{ingest_path.name}' found in archive {provider_artifact}. "
+                f"No entry matching '{entry_name}' found in archive {provider_artifact}. "
                 "Check zf.namelist() for available entries."
             )
             raise FileNotFoundError(msg)

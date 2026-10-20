@@ -34,7 +34,7 @@ import sofar as sf
 from irdl.cache import IRDL_CACHE_DIR
 from irdl.downloader import _fetch, _pooch_from_static_registry
 from irdl.logging import logger
-from irdl.utils import _link_or_copy, _preserve_permissions
+from irdl.utils import _atomic_write, _link_or_copy, _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4
 DEFAULT_CHUNK_SIZE = 256
@@ -190,24 +190,29 @@ output_format : str
 
         if sofa_path.exists():
             logger.info(f"Cache hit: {sofa_path}.")
+            with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
+                self._verify_sofa_convention(sofa_path)
         else:
-            direct_sofa_url, direct_sofa_hash = self._direct_sofa(source_filename)
-            if direct_sofa_url is not None:
-                provider_artifact = self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
-                _link_or_copy(provider_artifact, sofa_path)
-            else:
-                logger.info(f"No direct SOFA available for {source_filename}; using canonical provider artifact.")
-                if ingest_path.exists():
-                    logger.info(f"Ingestible file already exists at {ingest_path}, skipping download and processing.")
-                    ingest_artifact = ingest_path
+            with _atomic_write(sofa_path) as tmp_sofa_path:
+                direct_sofa_url, direct_sofa_hash = self._direct_sofa(source_filename)
+                if direct_sofa_url is not None:
+                    provider_artifact = self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
+                    _link_or_copy(provider_artifact, tmp_sofa_path)
                 else:
-                    provider_artifact = self.download(provider_dir, **dataset_kwargs)
-                    ingest_artifact = self.process(provider_artifact, ingest_path, **dataset_kwargs)
-                logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
-                with logger.spin(f"Writing SOFA {sofa_path.name}..."):
-                    self._ingest(ingest_artifact, sofa_path, **dataset_kwargs)
-        with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
-            self._verify_sofa_convention(sofa_path)
+                    logger.info(f"No direct SOFA available for {source_filename}; using canonical provider artifact.")
+                    if ingest_path.exists():
+                        logger.info(
+                            f"Ingestible file already exists at {ingest_path}, skipping download and processing."
+                        )
+                        ingest_artifact = ingest_path
+                    else:
+                        provider_artifact = self.download(provider_dir, **dataset_kwargs)
+                        ingest_artifact = self.process(provider_artifact, ingest_path, **dataset_kwargs)
+                    logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
+                    with logger.spin(f"Writing SOFA {sofa_path.name}..."):
+                        self._ingest(ingest_artifact, tmp_sofa_path, **dataset_kwargs)
+                with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
+                    self._verify_sofa_convention(tmp_sofa_path)
 
         return self._to_output(output_format, sofa_path, output_path)
 
@@ -339,8 +344,10 @@ output_format : str
         ingest_path : Path
             The processed, ingest-ready file at ``ingest_path``.
         """
-        ingest_path.parent.mkdir(parents=True, exist_ok=True)
-        return self._process(provider_artifact, ingest_path, **dataset_kwargs)
+        with _atomic_write(ingest_path) as tmp_ingest_path:
+            processed = self._process(provider_artifact, tmp_ingest_path, **dataset_kwargs)
+        # in the case that process writes nothing to tmp_ingest_path
+        return ingest_path if processed == tmp_ingest_path else processed
 
     def _process(self, provider_artifact: Path, ingest_path: Path, **_dataset_kwargs) -> Path:
         """Post-process downloaded file if needed.
@@ -541,7 +548,9 @@ output_format : str
             logger.info(f"Returning cached SOFA file {sofa_path}.")
             return sofa_path
         logger.info(f"Exporting SOFA file to {output_path}.")
-        return _link_or_copy(sofa_path, output_path)
+        with _atomic_write(output_path) as tmp_output_path:
+            _link_or_copy(sofa_path, tmp_output_path)
+        return output_path
 
     def _to_hdf5(self, sofa_path: Path, output_path: Path) -> Path:
         """Convert a SOFA file to IRDL HDF5 without loading all IR data."""
@@ -550,11 +559,11 @@ output_format : str
             msg = "_chunk_size must be > 0"
             raise ValueError(msg)
 
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         with (
+            _atomic_write(output_path) as tmp_output_path,
             logger.spin(f"Writing HDF5 {output_path.name}..."),
             netCDF4.Dataset(sofa_path, "r") as sofa,
-            h5.File(output_path, "w") as f,
+            h5.File(tmp_output_path, "w") as f,
         ):
             data_group = f.create_group("data")
             ir = sofa.variables["Data.IR"]

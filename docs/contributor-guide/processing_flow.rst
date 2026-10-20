@@ -92,11 +92,13 @@ Each Dataset has the following extension points:
 ``_process()``
    Optional. Transform provider-stage files into the single ingest-ready file. The default
    implementation skips processing and handles simple single-file promotion 
-   from ``provider`` to ``ingest``.
+   from ``provider`` to ``ingest``. ``ingest_path`` is a temporary path (``.tmp-<name>``);
+   use ``_source_filename()`` for file names.
 
 ``_ingest()``
    Optional for SOFA-native providers. Write the ingest artifact to the retained internal SOFA file.
-   The default implementation promotes SOFA files directly.
+   The default implementation promotes SOFA files directly. ``sofa_path`` is a temporary path
+   (``.tmp-<name>``); use ``_source_filename()`` for file names.
 
 ``_to_output()``
    Optional. Conversion methods normally stay in :class:`~irdl.base.BaseDataset`. New Datasets should not implement

@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+from collections.abc import Iterator
+from contextlib import contextmanager
 from functools import cache
 from importlib import resources
 from pathlib import Path
@@ -10,6 +12,8 @@ from pathlib import Path
 import psutil
 
 from irdl.logging import logger
+
+_TMP_PREFIX = ".tmp-"
 
 
 @cache
@@ -117,3 +121,30 @@ def _link_or_copy(source_path: Path, target_path: Path) -> Path:
     with logger.spin(f"Copying {target_path.name}..."):
         shutil.copy2(source_path, target_path)
     return target_path
+
+
+def _remove_path(path: Path) -> None:
+    """Remove a file or directory if it exists."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+@contextmanager
+def _atomic_write(final_path: Path) -> Iterator[Path]:
+    """Yield a temporary sibling of final_path and move it into place only if the block succeeds.
+
+    Cache lookups treat an existing path as complete, so interrupted or failed
+    writes must never leave anything at ``final_path``.
+    """
+    tmp_path = final_path.with_name(f"{_TMP_PREFIX}{final_path.name}")
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    _remove_path(tmp_path)
+    try:
+        yield tmp_path
+        # Some writers (e.g. SRIRACHA full plane) use their input in place and write nothing.
+        if tmp_path.exists():
+            tmp_path.replace(final_path)
+    finally:
+        _remove_path(tmp_path)
