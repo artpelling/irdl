@@ -37,7 +37,7 @@ from irdl.logging import logger
 from irdl.utils import _atomic_write, _link_or_copy, _preserve_permissions
 
 _SOFA_FIR_E_DIMS = 4
-DEFAULT_CHUNK_SIZE = 256
+DEFAULT_CHUNK_SIZE = 64
 
 
 class DatasetCategory(StrEnum):
