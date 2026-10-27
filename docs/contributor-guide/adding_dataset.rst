@@ -116,6 +116,31 @@ A skeletal Dataset looks like this:
 Keep this template intentionally small. Do not copy processing logic from another Dataset
 unless the new Dataset has the same provider format and needs the same transformation.
 
+Streaming large IR arrays
+-------------------------
+
+Use the shared batch budget, not Dataset-specific row limits or byte constants:
+
+.. code-block:: python
+
+   from irdl import config
+
+   batch_bytes = config._get_batch_bytes()
+
+Read the budget once at the start of a streaming operation and calculate slices
+from the array shape and dtype, accounting for widening to float64 where needed.
+Divide receivers or samples if a whole measurement would exceed the budget.
+``BaseDataset._get()`` keeps the budget unchanged throughout a Get operation.
+
+For float64 FIR-E storage, use ``choose_ir_chunk_shape()`` and
+``write_ir_chunks()`` from ``irdl._sofa``. The common helper chooses storage chunks;
+do not add a Dataset-specific chunk-size setting. Create and close the SOFA
+skeleton before handing its path and the IR iterator to the writer. Metadata,
+source interpretation, and payload checks remain with the Dataset.
+
+Use literal dimension counts for straightforward shape checks, with a targeted
+``# noqa: PLR2004`` where required, rather than introducing one-use ``DIMS`` constants.
+
 Update public API and CLI
 -------------------------
 

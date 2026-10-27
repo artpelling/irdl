@@ -9,7 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- One package-wide streaming batch budget: `irdl.config.batch_bytes` (64 MiB by default), initialized from `IRDL_BATCH_MIB` for CLI use
+- `Meshgrid3dDataset` (`irdl get 3dmeshgrid`) for the 3D Meshgrid room impulse response dataset, using the shared streamed SOFA writer
+
 ### Changed
+- Replace separate Dataset row limits and byte budgets with the shared setting for streamed IR reads, payload checks, queued compression buffers, and HDF5 export; storage chunk shapes remain automatic
+- Use literal dimension counts with targeted Ruff exceptions instead of duplicated `DIMS` constants
+- Share bounded IR compression and writing across MIRACLE, SRIRACHA, and 3D Meshgrid while keeping Dataset-specific metadata and reformatting separate
+- Bound SOFA-to-HDF5 IR reads by stored chunks and byte size, including single-measurement datasets with many receivers
 - Moved Dataset implementation modules into the `irdl.datasets` subpackage (e.g. `irdl.sonicom` -> `irdl.datasets.sonicom`); top-level imports such as `irdl.CipicDataset` are unchanged
 
 ---
