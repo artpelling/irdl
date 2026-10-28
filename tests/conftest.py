@@ -1,8 +1,32 @@
 """Pytest fixtures for irdl tests."""
 
+from contextlib import contextmanager
+
 import numpy as np
 import pytest
 import sofar as sf
+
+from irdl.logging import logger
+
+
+@pytest.fixture
+def progress_tasks(monkeypatch):
+    """Record measured work without rendering progress bars."""
+    tasks = []
+
+    @contextmanager
+    def record(message, total):
+        task = {"message": message, "total": total, "completed": 0}
+        tasks.append(task)
+
+        def advance(amount):
+            task["completed"] += amount
+            assert 0 <= task["completed"] <= total
+
+        yield advance
+
+    monkeypatch.setattr(logger, "progress", record)
+    return tasks
 
 
 @pytest.fixture

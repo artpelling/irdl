@@ -162,7 +162,8 @@ class TestDirectSofaProvider:
 
         CanonicalSofaDataset()._get(cache_dir=tmp_path, export_dir=None, output_format="sofa")
 
-        assert any("No direct SOFA available for canonical.sofa" in message for message in caplog.messages)
+        assert "Provider: canonical" in caplog.messages
+        assert any(message.startswith("Ready (sofa):") for message in caplog.messages)
 
 
 class TestIstaBaseDatasetAbstract:

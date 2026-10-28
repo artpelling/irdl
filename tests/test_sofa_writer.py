@@ -195,7 +195,7 @@ def test_writer_rejects_invalid_or_incomplete_chunks(tmp_path, fault):
 
 @pytest.mark.parametrize("workers", [1, 3])
 @pytest.mark.parametrize("dtype", ["<f8", ">f8"])
-def test_writer_preserves_storage_bytes_and_edge_padding(tmp_path, workers, dtype):
+def test_writer_preserves_storage_bytes_and_edge_padding(tmp_path, progress_tasks, workers, dtype):
     """Serial and parallel encoders preserve precision, byte order, and fill bytes."""
     shape = (1, 5, 9, 1)
     chunk_shape = (1, 2, 4, 1)
@@ -206,6 +206,9 @@ def test_writer_preserves_storage_bytes_and_edge_padding(tmp_path, workers, dtyp
 
     write_ir_chunks(path, _chunks(expected, chunk_shape), workers=workers)
 
+    assert len(progress_tasks) == 1
+    assert progress_tasks[0]["total"] == expected.size
+    assert progress_tasks[0]["completed"] == expected.size
     with netCDF4.Dataset(path) as sofa:
         sofa.set_auto_mask(False)
         actual = sofa.variables["Data.IR"][:].astype("f8")
@@ -367,7 +370,7 @@ def test_writer_bounds_pending_work_and_does_not_retain_source_batches(tmp_path,
 
 
 @pytest.mark.parametrize("failure", ["source", "compression", "write"])
-def test_writer_closes_handles_after_failures(tmp_path, monkeypatch, failure):
+def test_writer_closes_handles_after_failures(tmp_path, monkeypatch, progress_tasks, failure):
     """Read, encoding, and storage errors propagate after output handles close."""
     path = tmp_path / "failure.sofa"
     shape = (3, 1, 8, 1)
@@ -415,3 +418,5 @@ def test_writer_closes_handles_after_failures(tmp_path, monkeypatch, failure):
 
     assert opened
     assert all(not handle.id.valid for handle in opened)
+    assert progress_tasks[0]["completed"] == 0
+    assert progress_tasks[0]["total"] == data.size

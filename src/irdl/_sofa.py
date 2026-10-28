@@ -11,6 +11,7 @@ import h5py as h5
 import numpy as np
 
 from irdl import config
+from irdl.logging import logger
 
 
 def choose_ir_chunk_shape(
@@ -75,25 +76,39 @@ def write_ir_chunks(
         if chunk_bytes > batch_bytes:
             msg = "Data.IR storage chunks exceed config.batch_bytes; create smaller storage chunks"
             raise ValueError(msg)
+        logger.info("IRs: shape=%s, dtype=%s", ir.shape, ir.dtype)
+        logger.debug(
+            "IR storage: chunks=%s, gzip=%s, workers=%s, batch_bytes=%s",
+            ir.chunks,
+            ir.compression_opts,
+            workers,
+            batch_bytes,
+        )
         max_pending = min(2 * workers, batch_bytes // chunk_bytes)
         pending = deque()
-        with ThreadPoolExecutor(max_workers=workers) as executor:
+        with (
+            logger.progress("Writing SOFA IRs", total=ir.size) as advance,
+            ThreadPoolExecutor(max_workers=workers) as executor,
+        ):
             try:
                 for offset, values in _checked_chunks(ir, chunks):
                     # Own buffers before the source iterator can reuse them or release a batch.
                     data = np.array(values, dtype=ir.dtype, copy=True, order="C")
                     if workers == 1:
                         ir.id.write_direct_chunk(offset, _encode_ir_chunk(data, *encoding), filter_mask=0)
+                        advance(data.size)
                     else:
-                        pending.append((offset, executor.submit(_encode_ir_chunk, data, *encoding)))
+                        pending.append((offset, data.size, executor.submit(_encode_ir_chunk, data, *encoding)))
                         if len(pending) >= max_pending:
-                            destination, future = pending.popleft()
+                            destination, size, future = pending.popleft()
                             ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+                            advance(size)
                 while pending:
-                    destination, future = pending.popleft()
+                    destination, size, future = pending.popleft()
                     ir.id.write_direct_chunk(destination, future.result(), filter_mask=0)
+                    advance(size)
             finally:
-                for _, future in pending:
+                for _, _, future in pending:
                     future.cancel()
 
 
@@ -149,7 +164,10 @@ def _ir_variable(sofa: h5.File) -> h5.Dataset:
         or ir.chunks[-1] != 1
         or filters != (h5.h5z.FILTER_SHUFFLE, h5.h5z.FILTER_DEFLATE)
     ):
-        msg = "Data.IR requires nonempty float64 FIR-E storage, single-measurement/emitter chunks, shuffle then gzip"
+        msg = (
+            "Data.IR requires nonempty float64 FIR-E storage, single-measurement/emitter chunks, shuffle then gzip; "
+            f"actual shape={ir.shape}, dtype={ir.dtype}, chunks={ir.chunks}, filters={filters}"
+        )
         raise ValueError(msg)
     return ir
 

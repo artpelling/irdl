@@ -14,11 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Meshgrid3dDataset` (`irdl get 3dmeshgrid`) for the 3D Meshgrid room impulse response dataset, using the shared streamed SOFA writer
 
 ### Changed
+- Standardize contextual Get, Provider/cache, conversion, and validation messages across all Datasets, with Dataset/selection labels and distinct POOCH/SOFAR sources
+- Send diagnostics and aligned progress displays to stderr; honor the `irdl` logger's verbosity without resetting application configuration
 - Replace separate Dataset row limits and byte budgets with the shared setting for streamed IR reads, payload checks, queued compression buffers, and HDF5 export; storage chunk shapes remain automatic
 - Use literal dimension counts with targeted Ruff exceptions instead of duplicated `DIMS` constants
 - Share bounded IR compression and writing across MIRACLE, SRIRACHA, and 3D Meshgrid while keeping Dataset-specific metadata and reformatting separate
 - Bound SOFA-to-HDF5 IR reads by stored chunks and byte size, including single-measurement datasets with many receivers
 - Moved Dataset implementation modules into the `irdl.datasets` subpackage (e.g. `irdl.sonicom` -> `irdl.datasets.sonicom`); top-level imports such as `irdl.CipicDataset` are unchanged
+
+### Fixed
+- Close interrupted transfer progress without falsely reporting 100% completion
+- Announce Get completion only after staged writes and required validation finish
+- Limit SONICOM ambiguity warnings to requested artifacts, and report actual DOI retry causes and waits
 
 ---
 

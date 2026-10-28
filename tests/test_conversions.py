@@ -219,7 +219,7 @@ class TestConversionToHdf5:
     @pytest.mark.parametrize("emitters", [1, 2])
     @pytest.mark.parametrize("compressed", [False, True])
     def test_conversion_to_hdf5_bounds_large_rows_and_preserves_emitters(
-        self, tmp_path, monkeypatch, emitters, compressed
+        self, tmp_path, monkeypatch, progress_tasks, emitters, compressed
     ):
         """Stored chunks and contiguous arrays both obey the byte budget, including E>1."""
         shape = (1, 5, 17, emitters)
@@ -257,6 +257,9 @@ class TestConversionToHdf5:
         output = test_dataset._to_hdf5(source, tmp_path / "bounded.h5")
 
         assert len(writes) > 1
+        assert len(progress_tasks) == 1
+        assert progress_tasks[0]["total"] == expected.size
+        assert progress_tasks[0]["completed"] == expected.size
         with h5py.File(output) as result:
             actual = result["data/impulse_response"][:]
             wanted = expected[..., 0] if emitters == 1 else expected

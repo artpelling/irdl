@@ -82,9 +82,9 @@ class MrtdDataset(BaseDataset):
         source_filename = self._source_filename(**dataset_kwargs)
         provider_path = provider_dir / source_filename
         if provider_path.exists():
-            logger.info(f"SOFA file already cached at {provider_path}, skipping download")
+            logger.info("Provider cache hit: %s", provider_path)
         else:
-            logger.info(f"Downloading {self.name.upper()} file {source_filename}")
+            logger.debug("Canonical Provider artifact requested: %s", source_filename)
             pooch = _pooch_from_doi(self.doi, path=provider_dir)
             _fetch(pooch, source_filename)
         return provider_path

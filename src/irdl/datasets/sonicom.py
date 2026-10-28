@@ -20,12 +20,22 @@ from irdl.utils import load_hash_registry
 _SONICOM_ROOT = "https://ecosystem.sonicom.eu"
 
 
+class _Manifest(dict[str, str]):
+    """Retain ambiguity information without warning about unrequested artifacts."""
+
+    def __init__(self):
+        super().__init__()
+        self.duplicates: set[str] = set()
+
+
 @cache
 def _sonicom_manifest(database_id: int) -> dict[str, str]:
     """Return the current SONICOM filename-to-URL manifest for one database."""
     url = f"{_SONICOM_ROOT}/databases/{database_id}/download?type=json"
+    logger.info("Resolving SONICOM manifest: database=%s", database_id)
+    logger.debug("SONICOM manifest URL: %s", url)
     try:
-        with urlopen(url) as response:  # noqa: S310 - fixed HTTPS provider endpoint
+        with logger.spin(f"Resolving SONICOM database {database_id}"), urlopen(url) as response:  # noqa: S310
             payload = json.load(response)
     except (OSError, json.JSONDecodeError) as error:
         msg = f"Could not retrieve SONICOM manifest for database {database_id}"
@@ -41,8 +51,7 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
         raise TypeError(msg)
 
     prefix = f"{_SONICOM_ROOT}/data/{database_id}/"
-    manifest = {}
-    duplicate_filenames: set[str] = set()
+    manifest = _Manifest()
     for datafile in datafiles:
         try:
             filename = datafile["Datafile Name"]
@@ -60,14 +69,21 @@ def _sonicom_manifest(database_id: int) -> dict[str, str]:
             msg = f"Invalid SONICOM manifest entry for database {database_id}"
             raise ValueError(msg)
         if filename in manifest:
-            if filename not in duplicate_filenames:
-                logger.warning(
-                    f'Duplicate key "{filename}" in SONICOM database {database_id}; downloading first match.'
-                )
-                duplicate_filenames.add(filename)
+            if filename not in manifest.duplicates:
+                logger.debug("Duplicate SONICOM entry: database=%s, file=%s; keeping first URL", database_id, filename)
+                manifest.duplicates.add(filename)
         else:
             manifest[filename] = datafile_url
     return manifest
+
+
+def _sonicom_url(database_id: int, filename: str) -> str | None:
+    """Warn about ambiguity only when resolving the affected artifact."""
+    manifest = _sonicom_manifest(database_id)
+    url = manifest.get(filename)
+    if filename in getattr(manifest, "duplicates", ()):
+        logger.warning("Ambiguous SONICOM artifact %s in database %s; using first URL: %s", filename, database_id, url)
+    return url
 
 
 class SonicomBaseDataset:
@@ -78,7 +94,7 @@ class SonicomBaseDataset:
     def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
         """Resolve a SONICOM SOFA artifact and its optional pinned digest."""
         filename = Path(source_filename).with_suffix(".sofa").name
-        url = _sonicom_manifest(self.sonicom_database_id).get(filename)
+        url = _sonicom_url(self.sonicom_database_id, filename)
         return (url, load_hash_registry(self.name).get(filename)) if url is not None else (None, None)
 
     def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
@@ -202,7 +218,7 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
     def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[str, None] | tuple[None, None]:
         """Resolve an ARI SOFA artifact and digest through its series manifest."""
         series = source_filename.split(" ", 1)[1][0]
-        url = _sonicom_manifest(self._database_ids[series]).get(source_filename)
+        url = _sonicom_url(self._database_ids[series], source_filename)
         return (url, load_hash_registry(self.name).get(source_filename)) if url is not None else (None, None)
 
 

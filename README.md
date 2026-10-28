@@ -65,6 +65,26 @@ irdl.config.batch_bytes = 16 * 1024**2
 For CLI use, set `IRDL_BATCH_MIB=16` before starting `irdl`. This controls streaming
 batches, not total process memory; NumPy/pyfar outputs still load all requested IRs.
 
+## Diagnostics and progress
+
+Diagnostics and progress go to **stderr**, leaving CLI results on stdout for piping.
+Messages identify the Dataset and selection, with separate `POOCH` and `SOFAR` source
+labels for library output. Each successful Get ends with one `Ready` message; writing
+a temporary artifact does not announce success.
+
+The standard Python logger controls all IRDL messages and progress displays:
+
+```python
+import logging
+
+logging.getLogger("irdl").setLevel(logging.WARNING)  # Warnings/errors only; no progress
+# logging.getLogger("irdl").setLevel(logging.DEBUG)  # Include paths, chunking, and check precision
+```
+
+INFO reports cache/Provider decisions and major processing steps. DEBUG adds technical
+details. SOFA convention checks and Dataset-specific payload checks are reported
+separately; a cache hit does not imply that every payload value has been rechecked.
+
 ## Usage (CLI)
 
 Once installed, the package provides a convenient command line script which can be invoked with `irdl`.

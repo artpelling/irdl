@@ -210,11 +210,20 @@ def test_sriracha_full_plane_process_keeps_provider_artifact_set(tmp_path):
     assert not ingest_path.exists()
 
 
-def test_ista_payload_verification_accepts_matching_hdf5_and_sofa(tmp_path):
+def test_ista_payload_verification_accepts_matching_hdf5_and_sofa(tmp_path, progress_tasks):
     """ISTA payload verification accepts matching HDF5 and SOFA data."""
     hdf5_path, sofa_path = _write_matching_ista_files(tmp_path)
+    progress_tasks.clear()
 
     SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1D", dataset_split=None)
+
+    assert [task["message"] for task in progress_tasks] == [
+        "Checking Data.IR",
+        "Checking SourcePosition",
+        "Checking ReceiverPosition",
+    ]
+    assert [task["total"] for task in progress_tasks] == [24, 6, 9]
+    assert all(task["completed"] == task["total"] for task in progress_tasks)
 
 
 def test_ista_payload_verification_rejects_changed_coordinates(tmp_path):

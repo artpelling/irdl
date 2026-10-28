@@ -42,7 +42,7 @@ class IstaBaseDataset(BaseDataset):
 
         batch_bytes = config._get_batch_bytes()
         sofa_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Streaming ISTA HDF5 {ingest_path} to SOFA {sofa_path}.")
+        logger.debug("ISTA Ingest: %s -> %s", ingest_path, sofa_path)
         with h5.File(ingest_path, "r") as hdf5:
             ir = hdf5["data/impulse_response"]
             m, r, n = ir.shape
@@ -51,7 +51,7 @@ class IstaBaseDataset(BaseDataset):
                 raise ValueError(msg)
             ir_chunks = choose_ir_chunk_shape((m, r, n, 1), np.dtype("f8"))
             has_humidity = "humidity" in hdf5["metadata"]
-            logger.info(f"Writing {m} measurements, {r} receivers, {n} samples in chunks {ir_chunks}.")
+            logger.debug("IR shape=%s; storage chunks=%s", (m, r, n, 1), ir_chunks)
             with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
                 self._create_default_variables(
                     sofa,
@@ -83,15 +83,18 @@ class IstaBaseDataset(BaseDataset):
 
         _preserve_permissions(ingest_path, sofa_path)
         self._verify_payload(sofa_path, ingest_path, **dataset_kwargs)
-        logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
 
     def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **_dataset_kwargs) -> None:
         """Verify that a streamed ISTA SOFA matches its HDF5 ingest artifact."""
         batch_bytes = config._get_batch_bytes()
-        logger.info(f"Validating SOFA file {sofa_path}.")
+        logger.info("Payload check: IRs and Source/Receiver Coordinates against the ingest-ready artifact")
+        logger.debug(
+            "Payload check: %s against %s; IR precision=float32-equivalent, Coordinates=float64",
+            sofa_path,
+            ingest_artifact,
+        )
         with (
-            logger.spin(f"Running data checksum on {sofa_path.name}..."),
             netCDF4.Dataset(sofa_path) as sofa_dataset,
             h5.File(ingest_artifact, "r") as hdf5,
         ):
@@ -137,18 +140,21 @@ class IstaBaseDataset(BaseDataset):
                         )
                     )
                 )
-                for selection in selections:
-                    hdf5_data = hdf5_variable[selection]
-                    if len(sofa_variable.shape) == 4 and sofa_variable.shape[-1] == 1:  # noqa: PLR2004 - FIR-E.
-                        sofa_data = sofa_variable[(*selection, 0)]
-                    else:
-                        sofa_data = sofa_variable[selection]
-                    hdf5_hash.update(_canonical_array(hdf5_data, dtype).view(np.uint8))
-                    sofa_hash.update(_canonical_array(sofa_data, dtype).view(np.uint8))
+                with logger.progress(f"Checking {variable_name}", total=hdf5_variable.size) as advance:
+                    for selection in selections:
+                        hdf5_data = hdf5_variable[selection]
+                        if len(sofa_variable.shape) == 4 and sofa_variable.shape[-1] == 1:  # noqa: PLR2004 - FIR-E.
+                            sofa_data = sofa_variable[(*selection, 0)]
+                        else:
+                            sofa_data = sofa_variable[selection]
+                        hdf5_hash.update(_canonical_array(hdf5_data, dtype).view(np.uint8))
+                        sofa_hash.update(_canonical_array(sofa_data, dtype).view(np.uint8))
+                        advance(hdf5_data.size)
                 if hdf5_hash.hexdigest() != sofa_hash.hexdigest():
                     msg = (
                         f"SOFA checksum validation failed for {sofa_path}: "
-                        f"checksum differs from ISTA HDF5 ingest data: {variable_name}"
+                        f"checksum differs from ISTA HDF5 ingest data: {variable_name}; "
+                        f"precision={dtype}; expected={hdf5_hash.hexdigest()}, actual={sofa_hash.hexdigest()}"
                     )
                     raise ValueError(msg)
 
@@ -348,7 +354,10 @@ def _check_sriracha_values(
     expected_hash = hashlib.sha256(_canonical_array(expected, dtype).view(np.uint8)).digest()
     actual_hash = hashlib.sha256(_canonical_array(actual, dtype).view(np.uint8)).digest()
     if expected_hash != actual_hash:
-        msg = f"SOFA checksum validation failed for {sofa_path}: checksum differs from SRIRACHA split data: {name}"
+        msg = (
+            f"SOFA checksum validation failed for {sofa_path}: checksum differs from SRIRACHA split data: {name}; "
+            f"precision={dtype}; expected={expected_hash.hex()}, actual={actual_hash.hex()}"
+        )
         raise ValueError(msg)
 
 
@@ -489,7 +498,7 @@ class MiracleDataset(SonicomBaseDataset, IstaBaseDataset):
             provider directory.
         """
         full_path = provider_dir / self._source_filename(**{**dataset_kwargs, "dataset_split": None})
-        logger.info(f"Downloading MIRACLE scenario {dataset_kwargs['scenario']}")
+        logger.debug("Canonical MIRACLE artifact requested: %s", full_path.name)
         pup = _pooch_from_doi(self.doi, path=provider_dir)
         _fetch(pup, full_path.name)
         return full_path
@@ -729,12 +738,12 @@ class SrirachaDataset(IstaBaseDataset):
         if scenario.endswith("D") or split is not None:
             fname = self._source_filename(**dataset_kwargs)
             target_file = provider_dir / fname
-            logger.info(f"Downloading SRIRACHA scenario {scenario}")
+            logger.debug("Canonical SRIRACHA artifact requested: %s", fname)
             pup = _pooch_from_doi(self.doi, path=provider_dir)
             _fetch(pup, fname)
             return target_file
         # Non-dense full plane -> the four Split files are streamed directly during Ingest.
-        logger.info(f"Downloading SRIRACHA scenario {scenario} (4 split files)")
+        logger.debug("Canonical SRIRACHA request: %s (four Provider Splits)", scenario)
         pup = _pooch_from_doi(self.doi, path=provider_dir)
         for split_file in ["C1", "C2", "C3", "C4"]:
             fname = f"{scenario}-{split_file}.h5"
@@ -781,7 +790,7 @@ class SrirachaDataset(IstaBaseDataset):
         batch_bytes = config._get_batch_bytes()
         provider_dir = ingest_path
         sofa_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Streaming SRIRACHA split files for {scenario} to SOFA {sofa_path}.")
+        logger.debug("SRIRACHA Ingest: Provider Splits for %s -> %s", scenario, sofa_path)
         with ExitStack() as stack:
             handles = {
                 name: stack.enter_context(h5.File(provider_dir / f"{scenario}-{name}.h5", "r"))
@@ -793,7 +802,7 @@ class SrirachaDataset(IstaBaseDataset):
             m = len(handles) * n_split
             has_humidity = "humidity" in first["metadata"]
             ir_chunks = choose_ir_chunk_shape((m, r, n, 1), np.dtype("f8"))
-            logger.info(f"Writing {m} measurements, {r} receivers, {n} samples in chunks {ir_chunks}.")
+            logger.debug("IR shape=%s; storage chunks=%s", (m, r, n, 1), ir_chunks)
             with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
                 self._create_default_variables(
                     sofa,
@@ -830,7 +839,6 @@ class SrirachaDataset(IstaBaseDataset):
 
         _preserve_permissions(ingest_path, sofa_path)
         self._verify_payload(sofa_path, provider_dir, scenario=scenario)
-        logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
 
     def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **dataset_kwargs) -> None:
@@ -840,9 +848,13 @@ class SrirachaDataset(IstaBaseDataset):
 
         batch_bytes = config._get_batch_bytes()
         scenario = dataset_kwargs["scenario"]
-        logger.info(f"Validating SOFA file {sofa_path}.")
+        logger.info("Payload check: IRs and Source Coordinates against the four Provider Splits")
+        logger.debug(
+            "Payload check: %s against %s; IR precision=float32-equivalent, Coordinates=float64",
+            sofa_path,
+            ingest_artifact,
+        )
         with (
-            logger.spin(f"Running data checksum on {sofa_path.name}..."),
             netCDF4.Dataset(sofa_path) as sofa,
             ExitStack() as stack,
         ):
@@ -863,6 +875,9 @@ class SrirachaDataset(IstaBaseDataset):
                 if pair_bytes <= batch_bytes
                 else choose_ir_chunk_shape(shape, np.dtype("f8"), max_bytes=max(8, batch_bytes // 2))
             )
+            advance = stack.enter_context(
+                logger.progress("Checking SRIRACHA payload", total=prod(shape) + shape[0] * 3)
+            )
             for src, dst, left_name, right_name in _split_row_slices(side, pair_rows):
                 left, right = handles[left_name], handles[right_name]
                 for receivers in _chunk_slices(r, chunks[1]):
@@ -878,13 +893,20 @@ class SrirachaDataset(IstaBaseDataset):
                                     sofa.variables["Data.IR"][dst.start + column : dst.stop : 2, receivers, samples, 0],
                                     np.dtype("f4"),
                                 )
+                                advance(
+                                    (src.stop - src.start)
+                                    * (receivers.stop - receivers.start)
+                                    * (samples.stop - samples.start)
+                                )
                             continue
                         expected = _interleave_rows(
                             left["data/impulse_response"][selection], right["data/impulse_response"][selection]
                         )
                         actual = sofa.variables["Data.IR"][dst, receivers, samples, 0]
                         _check_sriracha_values(sofa_path, "Data.IR", expected, actual, np.dtype("f4"))
+                        advance(expected.size)
                 expected = _interleave_rows(left["data/location/source"][src], right["data/location/source"][src])
                 _check_sriracha_values(
                     sofa_path, "SourcePosition", expected, sofa.variables["SourcePosition"][dst], np.dtype("f8")
                 )
+                advance(expected.size)

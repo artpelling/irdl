@@ -305,20 +305,28 @@ def doi_to_repository(doi: str) -> DataRepository:
 
     # Extract the DOI and the repository information
     archive_url = None
+    last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             archive_url = doi_to_url(doi, timeout=DEFAULT_TIMEOUT)
             break
-        except (ConnectionError, Timeout) as e:
-            wait = BACKOFF_FACTOR * (2 ** attempt)
-            if attempt == 0:
-                logger.warning("Server is slow to respond, retrying with exponential backoff...")
-            logger.debug(f"Attempt {attempt + 1}/{MAX_RETRIES} failed ({type(e).__name__}), waiting {wait:.0f}s")
+        except (ConnectionError, Timeout) as error:
+            last_error = error
             if attempt < MAX_RETRIES - 1:
+                wait = BACKOFF_FACTOR * (2 ** attempt)
+                logger.warning(
+                    "DOI resolution failed for %s (%s: %s); retrying in %.0fs (attempt %s/%s)",
+                    doi, type(error).__name__, error, wait, attempt + 2, MAX_RETRIES,
+                )
                 sleep(wait)
+            else:
+                logger.debug("DOI resolution exhausted %s attempts for %s: %s", MAX_RETRIES, doi, error)
 
     if archive_url is None:
-        raise ConnectionError(f"Could not resolve DOI {doi} to a URL. Check the DOI or try running the script again.")
+        raise ConnectionError(
+            f"Could not resolve DOI {doi} after {MAX_RETRIES} attempts: {type(last_error).__name__}: {last_error}. "
+            "Check the DOI and network connection before retrying."
+        ) from last_error
 
     # Try the converters one by one until one of them returned a URL
     data_repository = None

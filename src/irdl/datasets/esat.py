@@ -180,9 +180,9 @@ class MyriadDataset(BaseDataset):
         zipfile_name = "MYRiAD_V2_econ.zip"
         zip_path = provider_dir / zipfile_name
         if zip_path.exists():
-            logger.info(f"MYRiAD ZIP archive already cached at {zip_path}, skipping download")
+            logger.info("Provider cache hit: %s", zip_path)
         else:
-            logger.info("Downloading MYRiAD (econ RIR archive)")
+            logger.debug("Canonical Provider archive requested: %s", zipfile_name)
             pup = _pooch_from_doi(self.doi, path=provider_dir)
             _fetch(pup, zipfile_name)
         return zip_path
@@ -218,6 +218,7 @@ class MyriadDataset(BaseDataset):
             files += [f"{base}/{mic}_RIR.wav" for mic in selection["mics"]]
         files.append(f"MYRiAD_V2_econ/coord/{selection['room']}.csv")
 
+        logger.info("Processing: extracting %s selected WAV/coordinate files", len(files))
         # extract files while preserving the archive tree
         with ZipFile(provider_artifact, "r") as zf:
             for member in files:
@@ -286,6 +287,7 @@ class MyriadDataset(BaseDataset):
         receiver = np.array([mic_coords[mic] for mic in selection["mics"]])  # (R, C)
 
         m, r, _n, e = ir.shape
+        logger.info("IRs: shape=%s, dtype=%s, sampling_rate=%s Hz", ir.shape, ir.dtype, sampling_rate)
 
         label_to_group = {mic: group for group, labels in self._ARRAY_GROUPS.items() for mic in labels}
         descriptions = [group_hardware[label_to_group[mic]] for mic in selection["mics"]]

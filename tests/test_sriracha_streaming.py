@@ -92,7 +92,7 @@ def test_full_plane_uses_shared_writer_and_preserves_order_and_metadata(tmp_path
 
 
 @pytest.mark.parametrize("budget", [8, 64, 80, 4096, 64 * 1024**2])
-def test_full_plane_bounds_source_reads_for_writing_and_verification(tmp_path, monkeypatch, budget):
+def test_full_plane_bounds_source_reads_for_writing_and_verification(tmp_path, monkeypatch, progress_tasks, budget):
     """Both writing and checking tile measurements that exceed the memory budget."""
     provider_dir = tmp_path / "provider"
     expected = _provider_splits(provider_dir)
@@ -123,6 +123,11 @@ def test_full_plane_bounds_source_reads_for_writing_and_verification(tmp_path, m
     dataset._ingest(provider_dir, path, scenario="SR1", dataset_split=None)
 
     assert reads
+    assert [task["total"] for task in progress_tasks] == [
+        expected["ir"].size,
+        expected["ir"].size + expected["source"].size,
+    ]
+    assert all(task["completed"] == task["total"] for task in progress_tasks)
     with netCDF4.Dataset(path) as sofa:
         assert sofa.variables["Data.IR"][:, :, :, 0].tobytes() == expected["ir"].tobytes()
 

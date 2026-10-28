@@ -2,12 +2,34 @@
 
 import logging
 
+import pytest
 import requests
 
 from irdl import repositories
 from irdl.repositories import DSPACE_API_ROOT, DSpaceRepository
 
 HTTP_ERROR_STATUS = 400
+
+
+def test_doi_retry_messages_identify_failure_and_only_announce_real_waits(monkeypatch, caplog):
+    """Retry diagnostics state the DOI, observed cause, and actual next action."""
+    doi = "10.0000/unavailable"
+    waits = []
+
+    def fail(*_args, **_kwargs):
+        msg = "DNS unavailable"
+        raise requests.ConnectionError(msg)
+
+    monkeypatch.setattr(repositories, "doi_to_url", fail)
+    monkeypatch.setattr(repositories, "sleep", waits.append)
+    monkeypatch.setattr(repositories, "MAX_RETRIES", 3)
+    with caplog.at_level(logging.DEBUG, logger="irdl"), pytest.raises(requests.ConnectionError, match=doi):
+        repositories.doi_to_repository(doi)
+    warnings = [record.getMessage() for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == len(waits) == 2  # noqa: PLR2004
+    assert all(doi in message and "DNS unavailable" in message and "retrying in" in message for message in warnings)
+    assert "exhausted 3 attempts" in caplog.messages[-1]
+    assert not any("slow to respond" in message for message in caplog.messages)
 
 
 class FakeResponse:

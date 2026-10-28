@@ -91,9 +91,9 @@ class MirdDataset(BaseDataset):
         )
         archive_path = provider_dir / archive
         if archive_path.exists():
-            logger.info(f"MIRD archive already cached at {archive_path}, skipping download")
+            logger.info("Provider cache hit: %s", archive_path)
             return archive_path
-        logger.info(f"Downloading MIRD archive {archive}")
+        logger.debug("Canonical Provider archive requested: %s", archive)
         pooch = _pooch_from_static_registry(
             path=provider_dir,
             registry={archive: load_hash_registry(self.name)[archive]},
@@ -113,6 +113,7 @@ class MirdDataset(BaseDataset):
                 if member.endswith(".mat") and any(f"_{distance}m_" in member for distance in distances)
             ]
             ingest_path.mkdir(parents=True, exist_ok=True)
+            logger.info("Processing: extracting %s MAT files for distance=%s", len(members), distance)
             for member in members:
                 archive.extract(member, ingest_path)
         return ingest_path
@@ -121,7 +122,7 @@ class MirdDataset(BaseDataset):
         """Convert selected MIRD source distances to a SingleRoomMIMOSRIR SOFA file."""
         responses, source_positions = [], []
         if dataset_kwargs["remove_delay"]:
-            logger.info("Removing excess measurement delay ...")
+            logger.info("Removing excess measurement delay from IRs")
         for member in sorted(ingest_path.glob("*.mat")):
             contents = loadmat(member, simplify_cells=True)
             impulse_response = np.asarray(contents["impulse_response"], dtype=float)
@@ -135,6 +136,7 @@ class MirdDataset(BaseDataset):
 
         ir = np.asarray(responses)[..., np.newaxis]
         measurements, receivers, _samples, _emitters = ir.shape
+        logger.info("IRs: shape=%s, dtype=%s, sampling_rate=48000 Hz", ir.shape, ir.dtype)
         spacings = self._spacings[dataset_kwargs["spacing"]].split("-")
         spacing = np.array([int(value) for value in spacings], dtype=float) / 100
         receiver_y = np.r_[0.0, np.cumsum(spacing)]

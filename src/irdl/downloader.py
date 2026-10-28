@@ -26,9 +26,20 @@ def _fetch(pup: po.Pooch, fname: str) -> str:
         The absolute path to the fetched file on disk.
 
     """
-    logger.debug(f"Fetching {fname}")
+    known_hash = pup.registry.get(fname)
+    logger.debug("Provider request: file=%s, url=%s, digest=%s", fname, pup.get_url(fname), known_hash)
+    if (Path(pup.path) / fname).exists():
+        logger.info("Provider cache: checking %s", fname)
+    if known_hash is None:
+        logger.warning("No pinned digest for %s; Provider integrity verification is skipped.", fname)
     preset_total = getattr(pup, "file_sizes", {}).get(fname) or 0
-    return pup.fetch(fname, progressbar=RichProgressBar(fname, preset_total=preset_total))
+    bar = RichProgressBar(fname, preset_total=preset_total)
+    try:
+        result = pup.fetch(fname, progressbar=bar)
+    finally:
+        bar.close()
+    logger.info("Provider artifact ready: %s (%s)", fname, "digest verified" if known_hash else "unverified")
+    return result
 
 
 def _pooch_from_static_registry(
@@ -59,8 +70,10 @@ def _pooch_from_doi(doi: str, path: str = IRDL_CACHE_DIR) -> po.Pooch:
 
     """
     pup = po.create(path=path, base_url=doi, retry_if_failed=2)
-    repository = doi_to_repository(doi)
-    repository.populate_registry(pup)
+    logger.info("Resolving canonical Provider DOI: %s", doi)
+    with logger.spin(f"Resolving Provider DOI {doi}"):
+        repository = doi_to_repository(doi)
+        repository.populate_registry(pup)
     for file in pup.registry:
         pup.urls[file] = repository.download_url(file_name=file)
     # Attach file sizes from the repository API for use by the progress bar.

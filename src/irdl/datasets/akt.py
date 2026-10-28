@@ -45,7 +45,8 @@ class AKTZipBaseDataset(BaseDataset):
             for name in zf.namelist():
                 if name.endswith(entry_name):
                     # Flatten the extraction (strip any nested ZIP directory)
-                    logger.info(f"Extracting {name} to {ingest_path.parent}")
+                    logger.info("Processing: extracting SOFA entry %s", name)
+                    logger.debug("Extracting %s -> %s", name, ingest_path)
                     with zf.open(name) as source, ingest_path.open("wb") as target:
                         shutil.copyfileobj(source, target)
                     return ingest_path
@@ -77,9 +78,9 @@ class AKTZipBaseDataset(BaseDataset):
         """
         zip_path = provider_dir / self._zipfile
         if zip_path.exists():
-            logger.info(f"ZIP archive already cached at {zip_path}, skipping download")
+            logger.info("Provider cache hit: %s", zip_path)
         else:
-            logger.info(f"Downloading {self.name.upper()} dataset")
+            logger.debug("Canonical Provider archive requested: %s", self._zipfile)
             pup = _pooch_from_doi(self.doi, path=provider_dir)
             _fetch(pup, self._zipfile)
         return zip_path

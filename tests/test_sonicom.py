@@ -64,8 +64,8 @@ def test_sonicom_manifest_resolves_current_url(monkeypatch):
     assert direct_sofa[1] is not None
 
 
-def test_sonicom_manifest_warns_once_and_keeps_first_duplicate_filename(monkeypatch, caplog):
-    """Warn once for duplicate auxiliary files without replacing their first URL."""
+def test_sonicom_manifest_warns_only_for_requested_duplicate_filename(monkeypatch, caplog):
+    """Keep the first URL, but do not warn about unrequested auxiliary files."""
     first_url = "https://ecosystem.sonicom.eu/data/18/1/generic.sofa"
     payload = {
         "data": [
@@ -78,7 +78,12 @@ def test_sonicom_manifest_warns_once_and_keeps_first_duplicate_filename(monkeypa
     sonicom._sonicom_manifest.cache_clear()
 
     assert sonicom._sonicom_manifest(18) == {"generic.sofa": first_url}
-    assert caplog.messages == ['Duplicate key "generic.sofa" in SONICOM database 18; downloading first match.']
+    assert not any(record.levelname == "WARNING" for record in caplog.records)
+    caplog.clear()
+    assert sonicom._sonicom_url(18, "unrelated.sofa") is None
+    assert not caplog.records
+    assert sonicom._sonicom_url(18, "generic.sofa") == first_url
+    assert caplog.messages == [f"Ambiguous SONICOM artifact generic.sofa in database 18; using first URL: {first_url}"]
 
 
 def test_ari_resolves_series_specific_manifest(monkeypatch):

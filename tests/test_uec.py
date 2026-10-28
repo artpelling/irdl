@@ -101,7 +101,7 @@ def test_meshgrid_acquires_the_selected_provider_file(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("dtype", ["f4", "f8"])
-def test_meshgrid_uses_shared_writer_with_its_own_geometry_and_metadata(tmp_path, monkeypatch, dtype):
+def test_meshgrid_uses_shared_writer_with_its_own_geometry_and_metadata(tmp_path, monkeypatch, progress_tasks, dtype):
     """The microphone grid becomes receivers, not moving sources or an ISTA array."""
     provider = tmp_path / "provider.h5"
     responses, grid = _provider(provider, dtype=dtype)
@@ -120,6 +120,8 @@ def test_meshgrid_uses_shared_writer_with_its_own_geometry_and_metadata(tmp_path
     dataset._ingest(provider, path)
 
     assert writes == [path]
+    assert [task["total"] for task in progress_tasks] == [responses.size, responses.size]
+    assert all(task["completed"] == task["total"] for task in progress_tasks)
     with h5.File(path) as sofa, h5.File(provider) as source:
         ir = sofa["Data.IR"]
         assert ir.shape == (1, *responses.shape, 1)

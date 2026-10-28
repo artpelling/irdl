@@ -16,6 +16,7 @@ The BaseDataset class handles:
 - Output format conversion from SOFA
 """
 
+import logging
 import os
 import shutil
 from abc import ABC, abstractmethod
@@ -34,7 +35,7 @@ import sofar as sf
 from irdl import config
 from irdl.cache import IRDL_CACHE_DIR
 from irdl.downloader import _fetch, _pooch_from_static_registry
-from irdl.logging import logger
+from irdl.logging import capture_stdout, get_logger, log_context, logger
 from irdl.utils import _atomic_write, _link_or_copy, _preserve_permissions
 
 
@@ -135,6 +136,29 @@ output_format : str
         output_format: str,
         **dataset_kwargs,
     ) -> dict | Path | None:
+        """Report one contextual Get outcome after validation and staged writes finish."""
+        selection = ",".join(str(value) for value in dataset_kwargs.values() if value is not None)
+        parameters = ", ".join(f"{key}={value!r}" for key, value in dataset_kwargs.items() if value is not None)
+        with log_context(self.name, selection or "default"):
+            logger.info("Get started: output_format=%s; %s", output_format, parameters or "default selection")
+            logger.debug("Streaming batch budget: %s bytes", config._get_batch_bytes())
+            try:
+                result = self._retrieve(cache_dir, export_dir, output_format, **dataset_kwargs)
+            except Exception as error:
+                notes = "; ".join(getattr(error, "__notes__", ()))
+                logger.error("Get failed: %s%s", error, f"; {notes}" if notes else "")
+                raise
+            destination = result if isinstance(result, Path) else "in-memory data"
+            logger.info("Ready (%s): %s", output_format, destination)
+            return result
+
+    def _retrieve(
+        self,
+        cache_dir: Path | str | None,
+        export_dir: Path | str | None,
+        output_format: str,
+        **dataset_kwargs,
+    ) -> dict | Path | None:
         """Internal implementation of Dataset retrieval.
 
         Parameters
@@ -181,34 +205,38 @@ output_format : str
 
         sofa_path = self._output_path(cache_dir / "output", source_filename, "sofa")
         if output_path is not None and output_path.exists():
-            logger.info(f"Output file already exists at {output_path}, skipping download and conversion.")
+            logger.info("Output cache hit (%s): %s", output_format, output_path)
             if output_format == "sofa":
                 self._verify_sofa_convention(output_path)
             return output_path
 
         if sofa_path.exists():
-            logger.info(f"Cache hit: {sofa_path}.")
+            logger.info("Canonical SOFA cache hit: %s", sofa_path)
             with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
                 self._verify_sofa_convention(sofa_path)
         else:
             with _atomic_write(sofa_path) as tmp_sofa_path:
                 direct_sofa_url, direct_sofa_hash = self._direct_sofa(source_filename)
                 if direct_sofa_url is not None:
+                    logger.info("Provider: direct SOFA from %s", urlparse(direct_sofa_url).netloc)
                     provider_artifact = self._download_direct_sofa(provider_dir, direct_sofa_url, direct_sofa_hash)
                     _link_or_copy(provider_artifact, tmp_sofa_path)
                 else:
-                    logger.info(f"No direct SOFA available for {source_filename}; using canonical provider artifact.")
+                    logger.debug("No direct SOFA available for %s", source_filename)
                     if ingest_path.exists():
-                        logger.info(
-                            f"Ingestible file already exists at {ingest_path}, skipping download and processing."
-                        )
+                        logger.info("Ingest cache hit: %s", ingest_path)
                         ingest_artifact = ingest_path
                     else:
                         provider_artifact = self.download(provider_dir, **dataset_kwargs)
                         ingest_artifact = self.process(provider_artifact, ingest_path, **dataset_kwargs)
-                    logger.debug(f"Ingesting {ingest_artifact} to SOFA file {sofa_path}")
-                    with logger.spin(f"Writing SOFA {sofa_path.name}..."):
-                        self._ingest(ingest_artifact, tmp_sofa_path, **dataset_kwargs)
+                    logger.info("Ingest: %s -> Canonical SOFA", ingest_artifact.name)
+                    logger.debug("Staged SOFA destination: %s", tmp_sofa_path)
+                    try:
+                        with logger.spin(f"Writing SOFA {sofa_path.name}"), capture_stdout(get_logger("sofar")):
+                            self._ingest(ingest_artifact, tmp_sofa_path, **dataset_kwargs)
+                    except Exception as error:
+                        error.add_note(f"Ingest failed for {ingest_artifact}; staged SOFA: {tmp_sofa_path}")
+                        raise
                 with logger.spin(f"Verifying SOFA conventions for {sofa_path.name}..."):
                     self._verify_sofa_convention(tmp_sofa_path)
 
@@ -217,20 +245,21 @@ output_format : str
     def _verify_sofa_convention(self, sofa_path: Path) -> None:
         """Verify SOFA convention through SofaStream."""
         try:
-            with sf.SofaStream(sofa_path) as sofa, logger.as_stdout:
+            with sf.SofaStream(sofa_path) as sofa, capture_stdout(get_logger("sofar"), logging.DEBUG):
                 sofa.verify(issue_handling="raise", mode="read")
                 # the following lines can be removed once/if
                 # SofaStream.upgrade_conventions exists in upstream sofar
                 convention = sofa.GLOBAL_SOFAConventions
                 version = sofa.GLOBAL_SOFAConventionsVersion
-            with logger.as_stdout:
+            with capture_stdout(get_logger("sofar"), logging.DEBUG):
                 sf.Sofa(convention, version=version, verify=False).upgrade_convention(verify=False)
         except (OSError, ValueError) as error:
-            logger.error(
-                f"SOFA convention not satisfied!\n{error}\n"
-                "See https://sofar.readthedocs.io/en/stable/resources/conventions.html#conventions for details."
+            error.add_note(
+                f"SOFA convention validation failed for {sofa_path}. "
+                "See https://sofar.readthedocs.io/en/stable/resources/conventions.html#conventions"
             )
             raise
+        logger.info("SOFA convention verified: %s v%s", convention, version)
 
     @abstractmethod
     def _validate_params(self, **dataset_kwargs) -> None:
@@ -283,8 +312,6 @@ output_format : str
     def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str | None) -> Path:
         """Download one direct SOFA artifact, verifying it when a digest is available."""
         provider_dir.mkdir(exist_ok=True, parents=True)
-        if known_hash is None:
-            logger.warning(f"No digest for direct SOFA {url}; skipping integrity verification.")
         filename = Path(urlparse(url).path).name
         if Path(filename).suffix.lower() != ".sofa":
             msg = f"Direct SOFA URL must name a .sofa file: {url!r}"
@@ -317,6 +344,7 @@ output_format : str
             Path to the downloaded artifact on disk (file or directory).
         """
         provider_dir.mkdir(exist_ok=True, parents=True)
+        logger.info("Provider: canonical")
         return self._download(provider_dir, **dataset_kwargs)
 
     @abstractmethod
@@ -342,6 +370,8 @@ output_format : str
         ingest_path : Path
             The processed, ingest-ready file at ``ingest_path``.
         """
+        logger.info("Processing Provider artifact: %s", provider_artifact.name)
+        logger.debug("Ingest-ready destination: %s", ingest_path)
         with _atomic_write(ingest_path) as tmp_ingest_path:
             processed = self._process(provider_artifact, tmp_ingest_path, **dataset_kwargs)
         # in the case that process writes nothing to tmp_ingest_path
@@ -444,6 +474,7 @@ output_format : str
             Path to the exported file or directory.
         """
         output_base = export_dir / self.name.upper() / "raw"
+        logger.info("Exporting raw Provider artifact to %s", output_base)
         output_base.mkdir(exist_ok=True, parents=True)
 
         if provider_artifact.is_file():
@@ -483,8 +514,9 @@ output_format : str
         if output_format == "hdf5":
             return self._to_hdf5(sofa_path, output_path)
         if output_format in ("pyfar", "numpy"):
-            logger.info(f"Loading SOFA file for {output_format} conversion.")
-            with logger.spin(f"Loading {sofa_path.name}..."), logger.as_stdout:
+            logger.info("Converting Canonical SOFA to %s in-memory data", output_format)
+            logger.debug("Loading all IRs from %s into memory", sofa_path)
+            with logger.spin(f"Loading {sofa_path.name}"), capture_stdout(get_logger("sofar")):
                 sofa = sf.read_sofa(sofa_path, verify=False, verbose=True)
             if output_format == "pyfar":
                 return self._to_pyfar(sofa)
@@ -543,7 +575,7 @@ output_format : str
     def _to_sofa(self, sofa_path: Path, output_path: Path) -> Path:
         """Return or export the retained SOFA file."""
         if output_path == sofa_path:
-            logger.info(f"Returning cached SOFA file {sofa_path}.")
+            logger.debug("Returning retained SOFA artifact: %s", sofa_path)
             return sofa_path
         logger.info(f"Exporting SOFA file to {output_path}.")
         with _atomic_write(output_path) as tmp_output_path:
@@ -553,10 +585,10 @@ output_format : str
     def _to_hdf5(self, sofa_path: Path, output_path: Path) -> Path:
         """Convert a SOFA file to IRDL HDF5 without loading all IR data."""
         batch_bytes = config._get_batch_bytes()
+        logger.info("Converting Canonical SOFA to HDF5: %s", output_path)
 
         with (
             _atomic_write(output_path) as tmp_output_path,
-            logger.spin(f"Writing HDF5 {output_path.name}..."),
             netCDF4.Dataset(sofa_path, "r") as sofa,
             h5.File(tmp_output_path, "w") as f,
         ):
@@ -574,16 +606,18 @@ output_format : str
                 chunks[axis] = min(max(1, chunks[axis]), values_left)
                 values_left = max(1, values_left // chunks[axis])
             counts = tuple((size + step - 1) // step for size, step in zip(ir.shape, chunks, strict=True))
-            for index in np.ndindex(counts):
-                selection = tuple(
-                    slice(offset * step, min((offset + 1) * step, size))
-                    for offset, step, size in zip(index, chunks, ir.shape, strict=True)
-                )
-                data = ir[selection]
-                if has_single_emitter:
-                    selection = selection[:-1]
-                    data = data[..., 0]
-                output_ir[selection] = data
+            with logger.progress(f"Writing HDF5 IRs: {output_path.name}", total=ir.size) as advance:
+                for index in np.ndindex(counts):
+                    selection = tuple(
+                        slice(offset * step, min((offset + 1) * step, size))
+                        for offset, step, size in zip(index, chunks, ir.shape, strict=True)
+                    )
+                    data = ir[selection]
+                    if has_single_emitter:
+                        selection = selection[:-1]
+                        data = data[..., 0]
+                    output_ir[selection] = data
+                    advance(data.size)
 
             loc_group = data_group.create_group("location")
             loc_group.create_dataset("source", data=sofa.variables["SourcePosition"][:])

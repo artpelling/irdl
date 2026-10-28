@@ -65,7 +65,7 @@ class Meshgrid3dDataset(BaseDataset):
     def _download(self, provider_dir: Path, **dataset_kwargs) -> Path:
         """Acquire the selected checksum-verified HDF5 Provider artifact."""
         filename = self._source_filename(**dataset_kwargs)
-        logger.info(f"Downloading 3D Meshgrid speaker {dataset_kwargs['speaker']}")
+        logger.debug("Canonical Provider artifact requested: %s", filename)
         pooch = _pooch_from_doi(self.doi, path=provider_dir)
         _fetch(pooch, filename)
         return provider_dir / filename
@@ -161,19 +161,24 @@ class Meshgrid3dDataset(BaseDataset):
     def _verify_payload(self, sofa_path: Path, ingest_artifact: Path, **_dataset_kwargs) -> None:
         """Compare IRs and supplied geometry exactly in bounded receiver/sample tiles."""
         batch_bytes = config._get_batch_bytes()
+        logger.info("Payload check: IRs, supplied geometry, sampling rate, and mapped metadata")
+        logger.debug("Payload check: %s against %s; precision=exact float64", sofa_path, ingest_artifact)
         with h5.File(ingest_artifact, "r") as source, h5.File(sofa_path, "r") as sofa:
             info = _provider_info(source)
             rir = source["rir"]
             ir = sofa["Data.IR"]
             if ir.shape != (1, *rir.shape, 1):
-                msg = "Meshgrid payload mismatch: Data.IR shape"
+                msg = f"Meshgrid payload mismatch: Data.IR shape; expected {(1, *rir.shape, 1)}, actual {ir.shape}"
                 raise ValueError(msg)
             chunks = choose_ir_chunk_shape(ir.shape, ir.dtype)
-            for start in range(0, rir.shape[0], chunks[1]):
-                rows = slice(start, min(start + chunks[1], rir.shape[0]))
-                for sample in range(0, rir.shape[1], chunks[2]):
-                    samples = slice(sample, min(sample + chunks[2], rir.shape[1]))
-                    _compare("Data.IR", rir[rows, samples], ir[0, rows, samples, 0])
+            with logger.progress("Checking Meshgrid IRs", total=rir.size) as advance:
+                for start in range(0, rir.shape[0], chunks[1]):
+                    rows = slice(start, min(start + chunks[1], rir.shape[0]))
+                    for sample in range(0, rir.shape[1], chunks[2]):
+                        samples = slice(sample, min(sample + chunks[2], rir.shape[1]))
+                        expected = rir[rows, samples]
+                        _compare("Data.IR", expected, ir[0, rows, samples, 0])
+                        advance(expected.size)
             batch_rows = max(1, batch_bytes // (3 * 8))
             for start in range(0, rir.shape[0], batch_rows):
                 rows = slice(start, min(start + batch_rows, rir.shape[0]))
@@ -228,6 +233,14 @@ def _compare(name: str, expected: np.ndarray, actual: np.ndarray) -> None:
     """Reject shape changes and any difference in the stored float64 values."""
     expected = np.asarray(expected, dtype="f8")
     actual = np.asarray(actual, dtype="f8")
-    if expected.shape != actual.shape or expected.tobytes() != actual.tobytes():
-        msg = f"Meshgrid payload mismatch: {name}"
+    if expected.shape != actual.shape:
+        msg = f"Meshgrid payload mismatch: {name}; expected shape {expected.shape}, actual {actual.shape}"
+        raise ValueError(msg)
+    if expected.tobytes() != actual.tobytes():
+        different = np.flatnonzero(expected.view("u8").ravel() != actual.view("u8").ravel())
+        index = tuple(int(value) for value in np.unravel_index(different[0], expected.shape))
+        msg = (
+            f"Meshgrid payload mismatch: {name} at local index {index}; "
+            f"expected {expected[index]!r}, actual {actual[index]!r}"
+        )
         raise ValueError(msg)
