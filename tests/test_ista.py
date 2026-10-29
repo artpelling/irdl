@@ -5,6 +5,8 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import pytest
+import sofar as sf
 
 from irdl.datasets import sonicom
 from irdl.datasets.ista import MiracleDataset, SrirachaDataset
@@ -97,6 +99,72 @@ class TestMiracleProcessing:
 
 class TestSrirachaProcessing:
     """Tests for SRIRACHA-specific processing helpers."""
+
+    @pytest.mark.parametrize(
+        ("scenario", "dataset_split", "bitstream"),
+        [
+            ("SR1", None, "230377c8-f7bd-4e70-abad-f824464d2860"),
+            ("SR1-D", None, "72d8ea5b-959e-411d-b185-61d16d5611ce"),
+            ("SR1", "C1", "3bb17656-a907-4ff0-b682-00e988f3358d"),
+            ("SR1", "C2", "d793a95a-cda7-40c2-aa93-1fda9ed01fc7"),
+            ("SR1", "C3", "ebaf10d1-8eba-47ae-a024-100e4865ca37"),
+            ("SR1", "C4", "cf87ca0d-a605-483d-9b61-cbca9efb3668"),
+            ("SR2", None, "16dfc746-d468-42b3-94d7-bb8b2f62c485"),
+            ("SR2-D", None, "16928a00-3307-4aa8-9b10-415292f41b8c"),
+            ("SR2", "C1", "4a87658c-0631-4630-8e20-ba5d8f95cd4a"),
+            ("SR2", "C2", "da80797a-59e6-426e-b307-5ba05f6e298d"),
+            ("SR2", "C3", "b71a3b68-2225-4a3d-b990-78a53f032ad0"),
+            ("SR2", "C4", "65b3fe7f-7325-4cee-8e22-e227b95edc16"),
+            ("SRA1", None, "fd1ab25c-46ad-43f1-a9c2-0abb30a6a8a5"),
+            ("SRA1-D", None, "6961647d-b9e9-460f-bcd0-c23610554cad"),
+            ("SRA1", "C1", "8bfa27bc-326e-42b5-aff4-9597bb7c6123"),
+            ("SRA1", "C2", "ae7c5065-2c46-4ea8-95e4-1ecde6bb7c34"),
+            ("SRA1", "C3", "e789ac85-ddb8-4aa6-b133-e9b2b3e00f4f"),
+            ("SRA1", "C4", "713e73c9-6017-4492-8b34-83562d34b9f4"),
+            ("SRA2", None, "40f7adf8-7ba8-452a-8d24-73085d2cbbfa"),
+            ("SRA2-D", None, "0e76d7a6-6f3b-4fea-b9bb-145518be6f5d"),
+            ("SRA2", "C1", "4219d3a5-b683-406c-948c-2ac00d0bcc03"),
+            ("SRA2", "C2", "5887c8f5-b60c-4fc7-b7da-b2fed88c2223"),
+            ("SRA2", "C3", "c741ccee-b2c3-4b91-be7b-6aed048566b2"),
+            ("SRA2", "C4", "697cc94a-52d5-4f33-b8e8-f01d69a23882"),
+        ],
+    )
+    def test_sofa_references_selection_geometry_without_changing_payload(
+        self, tmp_path, scenario, dataset_split, bitstream
+    ):
+        """All 24 selections use their assigned DAE, not placeholder shoebox bounds."""
+        dataset = SrirachaDataset()
+        kwargs = {"scenario": scenario, "dataset_split": dataset_split}
+        if dataset_split is None and not scenario.endswith("-D"):
+            artifact = tmp_path / "provider"
+            artifact.mkdir()
+            inputs = [artifact / f"{scenario}-C{i}.h5" for i in range(1, 5)]
+        else:
+            artifact = tmp_path / dataset._source_filename(**kwargs)
+            inputs = [artifact]
+        expected_ir, expected_source = [], []
+        for index, path in enumerate(inputs):
+            _write_ista_hdf5(path, n_sources=1, start=index * 100)
+            with h5py.File(path) as source:
+                expected_ir.append(source["data/impulse_response"][:])
+                expected_source.append(source["data/location/source"][:])
+                expected_receiver = source["data/location/receiver"][:]
+        output = tmp_path / "selection.sofa"
+
+        dataset._ingest(artifact, output, **kwargs)
+
+        with h5py.File(output) as sofa:
+            assert sofa.attrs["RoomType"].decode() == "dae"
+            assert sofa.attrs["RoomGeometry"].decode() == (
+                f"https://depositonce.tu-berlin.de/bitstreams/{bitstream}/download"
+            )
+            assert {"RoomCornerA", "RoomCornerB", "RoomCorners"}.isdisjoint(sofa)
+            np.testing.assert_array_equal(sofa["RoomVolume"][:], [73.5])
+            np.testing.assert_array_equal(sofa["Data.IR"][:, :, :, 0], np.concatenate(expected_ir))
+            np.testing.assert_array_equal(sofa["SourcePosition"][:], np.concatenate(expected_source))
+            np.testing.assert_array_equal(sofa["ReceiverPosition"][:, :, 0], expected_receiver)
+        with sf.SofaStream(output) as sofa:
+            assert sofa.verify(issue_handling="return", mode="read") is None
 
     def test_full_plane_process_keeps_provider_artifact_set(self, tmp_path):
         """Verify full-plane processing keeps split files as the ingest artifact set."""

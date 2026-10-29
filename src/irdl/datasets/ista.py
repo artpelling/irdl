@@ -11,6 +11,7 @@ from contextlib import ExitStack
 from datetime import UTC, datetime
 from math import isqrt, prod
 from pathlib import Path
+from typing import ClassVar
 
 import h5py as h5
 import netCDF4
@@ -614,25 +615,45 @@ class SrirachaDataset(IstaBaseDataset):
         ("C3", (1, 0)),
         ("C4", (1, 1)),
     )
+    _room_geometry_bitstreams: ClassVar[dict[str, str]] = {
+        "SR1": "230377c8-f7bd-4e70-abad-f824464d2860",
+        "SR1-D": "72d8ea5b-959e-411d-b185-61d16d5611ce",
+        "SR1-C1": "3bb17656-a907-4ff0-b682-00e988f3358d",
+        "SR1-C2": "d793a95a-cda7-40c2-aa93-1fda9ed01fc7",
+        "SR1-C3": "ebaf10d1-8eba-47ae-a024-100e4865ca37",
+        "SR1-C4": "cf87ca0d-a605-483d-9b61-cbca9efb3668",
+        "SR2": "16dfc746-d468-42b3-94d7-bb8b2f62c485",
+        "SR2-D": "16928a00-3307-4aa8-9b10-415292f41b8c",
+        "SR2-C1": "4a87658c-0631-4630-8e20-ba5d8f95cd4a",
+        "SR2-C2": "da80797a-59e6-426e-b307-5ba05f6e298d",
+        "SR2-C3": "b71a3b68-2225-4a3d-b990-78a53f032ad0",
+        "SR2-C4": "65b3fe7f-7325-4cee-8e22-e227b95edc16",
+        "SRA1": "fd1ab25c-46ad-43f1-a9c2-0abb30a6a8a5",
+        "SRA1-D": "6961647d-b9e9-460f-bcd0-c23610554cad",
+        "SRA1-C1": "8bfa27bc-326e-42b5-aff4-9597bb7c6123",
+        "SRA1-C2": "ae7c5065-2c46-4ea8-95e4-1ecde6bb7c34",
+        "SRA1-C3": "e789ac85-ddb8-4aa6-b133-e9b2b3e00f4f",
+        "SRA1-C4": "713e73c9-6017-4492-8b34-83562d34b9f4",
+        "SRA2": "40f7adf8-7ba8-452a-8d24-73085d2cbbfa",
+        "SRA2-D": "0e76d7a6-6f3b-4fea-b9bb-145518be6f5d",
+        "SRA2-C1": "4219d3a5-b683-406c-948c-2ac00d0bcc03",
+        "SRA2-C2": "5887c8f5-b60c-4fc7-b7da-b2fed88c2223",
+        "SRA2-C3": "c741ccee-b2c3-4b91-be7b-6aed048566b2",
+        "SRA2-C4": "697cc94a-52d5-4f33-b8e8-f01d69a23882",
+    }
     room_volume = 73.5
-    room_type = "shoebox"
+    room_type = "dae"
     measurement_date = 1755648000.0
 
-    def _create_room_variables(self, sofa: netCDF4.Dataset, **_dataset_kwargs) -> None:
-        """Create SRIRACHA's current shoebox metadata."""
+    def _create_room_variables(self, sofa: netCDF4.Dataset, **dataset_kwargs) -> None:
+        """Set the matching selection's DAE without transforming Coordinates."""
+        selection = self._source_filename(**dataset_kwargs).removesuffix(".h5")
+        bitstream = self._room_geometry_bitstreams[selection]
         sofa.RoomType = self.room_type
+        sofa.RoomGeometry = f"https://depositonce.tu-berlin.de/bitstreams/{bitstream}/download"
         room_volume = sofa.createVariable("RoomVolume", "f8", ("I",))
         room_volume.Units = "cubic metre"
         room_volume[:] = self.room_volume
-        if self.room_type == "shoebox":
-            room_corner_a = sofa.createVariable("RoomCornerA", "f8", ("I", "C"))
-            room_corner_b = sofa.createVariable("RoomCornerB", "f8", ("I", "C"))
-            room_corners = sofa.createVariable("RoomCorners", "f8", ("I", "I"))
-            room_corners.Type = "cartesian"
-            room_corners.Units = "metre"
-            room_corner_a[:] = (0.0, 0.0, 0.0)
-            room_corner_b[:] = (1.0, 1.0, 1.0)
-            room_corners[:] = 0.0
 
     @classmethod
     def get(

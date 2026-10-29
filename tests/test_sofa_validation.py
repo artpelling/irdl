@@ -26,7 +26,7 @@ def test_ista_streaming_sofa_writer_produces_valid_checked_sofa(tmp_path):
     hdf5_path, _ = _write_matching_ista_files(tmp_path)
     sofa_path = tmp_path / "streamed.sofa"
 
-    SrirachaDataset()._ingest(hdf5_path, sofa_path, scenario="SR1D", dataset_split=None)
+    SrirachaDataset()._ingest(hdf5_path, sofa_path, scenario="SR1-D", dataset_split=None)
 
     with sf.SofaStream(sofa_path) as sofa:
         assert sofa.verify(issue_handling="return", mode="read") is None
@@ -43,7 +43,7 @@ def test_ista_streaming_sofa_writer_produces_valid_checked_sofa(tmp_path):
         assert sofa.variables["ReceiverUp"].shape == (3, 3, 1)
         assert sofa.DateCreated == sofa.DateModified
         assert sofa.DateCreated != "2026-01-01 00:00:00"
-        SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1D", dataset_split=None)
+        SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1-D", dataset_split=None)
     with h5py.File(sofa_path) as sofa:
         assert sofa.attrs["SourceDescription"].dtype.kind == "S"
 
@@ -214,7 +214,7 @@ def test_ista_payload_verification_accepts_matching_hdf5_and_sofa(tmp_path):
     """ISTA payload verification accepts matching HDF5 and SOFA data."""
     hdf5_path, sofa_path = _write_matching_ista_files(tmp_path)
 
-    SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1D", dataset_split=None)
+    SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1-D", dataset_split=None)
 
 
 def test_ista_payload_verification_rejects_changed_coordinates(tmp_path):
@@ -224,7 +224,7 @@ def test_ista_payload_verification_rejects_changed_coordinates(tmp_path):
         dataset.variables["SourcePosition"][0, 0] = 99.0
 
     with pytest.raises(ValueError, match="checksum differs from ISTA HDF5 ingest data: SourcePosition"):
-        SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1D", dataset_split=None)
+        SrirachaDataset()._verify_payload(sofa_path, hdf5_path, scenario="SR1-D", dataset_split=None)
 
 
 def _write_sriracha_split_files(provider_dir: Path) -> None:
@@ -269,5 +269,5 @@ def _write_matching_ista_files(tmp_path: Path, ir: np.ndarray | None = None) -> 
         metadata.create_dataset("c0", data=np.full(measurements, 343.0, dtype=np.float32))
 
     sofa_path = tmp_path / "ista.sofa"
-    SrirachaDataset()._ingest(hdf5_path, sofa_path, scenario="SR1D", dataset_split=None)
+    SrirachaDataset()._ingest(hdf5_path, sofa_path, scenario="SR1-D", dataset_split=None)
     return hdf5_path, sofa_path
