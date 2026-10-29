@@ -2,13 +2,14 @@
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import h5py
 import numpy as np
 import pytest
 import sofar as sf
 
-from irdl.datasets import sonicom
+from irdl.datasets import ista
 from irdl.datasets.ista import MiracleDataset, SrirachaDataset
 
 
@@ -42,25 +43,177 @@ def _write_ista_hdf5(path: Path, *, n_sources: int, start: int = 0) -> None:
         metadata_group.create_dataset("temperature", data=temperature)
 
 
+@pytest.fixture
+def miracle_manifest(monkeypatch):
+    """Provide changing API-discovered URLs/checksums without accessing the network."""
+    filenames = ["A1.sofa", "A2.sofa", "D1.sofa", "R2.sofa", "loudspeaker.sofa"]
+    manifest = SimpleNamespace(
+        urls={name: f"https://example.test/{name.removesuffix('.sofa')}/download" for name in filenames},
+        registry={name: f"MD5:{index:032x}" for index, name in enumerate(filenames)},
+    )
+
+    def discover(doi, path=None):
+        assert doi == "10.14279/depositonce-26877"
+        if path is not None:
+            manifest.abspath = Path(path)
+        return manifest
+
+    monkeypatch.setattr(ista, "_pooch_from_doi", discover)
+    return manifest
+
+
 class TestMiracleProcessing:
     """Tests for MIRACLE-specific processing helpers."""
 
-    def test_resolves_full_scenarios_from_sonicom(self, monkeypatch):
-        """Use SONICOM's native SOFA files except for artificial splits."""
-        urls = {
-            "A1.sofa": "https://ecosystem.sonicom.eu/data/98/28532/62248/A1.sofa",
-            "A2.sofa": "https://ecosystem.sonicom.eu/data/98/28533/62249/A2.sofa",
-            "D1.sofa": "https://ecosystem.sonicom.eu/data/98/28534/62250/D1.sofa",
-            "R2.sofa": "https://ecosystem.sonicom.eu/data/98/28535/62251/R2.sofa",
-        }
-        monkeypatch.setattr(sonicom, "_sonicom_manifest", lambda _database_id: urls)
+    def test_resolves_measurement_sofas_from_new_depositonce_release(self, miracle_manifest):
+        """Use API URLs and checksums rather than checked-in bitstreams or digests."""
         dataset = MiracleDataset()
+        assert dataset.doi == "10.14279/depositonce-26877"
+        for scenario in ("A1", "A2", "D1", "R2"):
+            filename = f"{scenario}.sofa"
+            assert dataset._direct_sofa(f"{scenario}.h5") == (
+                miracle_manifest.urls[filename],
+                miracle_manifest.registry[filename],
+            )
 
-        for scenario, url in urls.items():
-            direct_sofa = dataset._direct_sofa(f"{scenario.removesuffix('.sofa')}.h5")
-            assert direct_sofa[0] == url
-            assert direct_sofa[1] is not None
-        assert dataset._direct_sofa("A1-C1.h5") == (None, None)
+    def test_missing_sofa_uses_hdf5_path(self, miracle_manifest):
+        """The API manifest, not a separate scenario list, determines availability."""
+        dataset = MiracleDataset()
+        for scenario in ("A1", "A2", "R2"):
+            for split in ("C1", "C2", "C3", "C4"):
+                assert dataset._direct_sofa(f"{scenario}-{split}.h5") == (None, None)
+        miracle_manifest.urls.pop("A1.sofa")
+        assert dataset._direct_sofa("A1.h5") == (None, None)
+
+    @pytest.mark.parametrize("output_format", ["raw", "sofa"])
+    def test_loudspeaker_is_rejected_before_discovery(self, tmp_path, monkeypatch, output_format):
+        """Existing parameter validation excludes loudspeaker for all retrieval paths."""
+
+        def no_discovery(*_args, **_kwargs):
+            pytest.fail("Invalid scenarios must not query the DOI")
+
+        monkeypatch.setattr(ista, "_pooch_from_doi", no_discovery)
+        with pytest.raises(ValueError, match="scenario must be one of"):
+            MiracleDataset()._get(
+                scenario="loudspeaker",
+                dataset_split=None,
+                cache_dir=tmp_path,
+                export_dir=None,
+                output_format=output_format,
+            )
+
+    def test_missing_native_sofa_checksum_is_an_error(self, miracle_manifest):
+        """An available SOFA still requires an API-provided integrity checksum."""
+        miracle_manifest.registry["A1.sofa"] = None
+        with pytest.raises(ValueError, match="Missing native SOFA checksum"):
+            MiracleDataset()._direct_sofa("A1.h5")
+
+    def test_direct_get_preserves_native_sofa_and_uses_named_provider_file(
+        self, tmp_path, monkeypatch, sofa_object, miracle_manifest
+    ):
+        """Filename-free DepositOnce URLs bypass HDF5 conversion with API checksums."""
+        dataset = MiracleDataset()
+        url, checksum = dataset._direct_sofa("A1.h5")
+        assert url == miracle_manifest.urls["A1.sofa"]
+
+        def fetch(pup, filename):
+            assert filename == "A1.sofa"
+            assert pup.urls[filename] == url
+            assert pup.registry[filename].lower() == checksum.lower()
+            path = Path(pup.abspath) / filename
+            sf.write_sofa(path, sofa_object)
+            return str(path)
+
+        def no_ingest(*_args, **_kwargs):
+            pytest.fail("Native SOFA retrieval must not ingest HDF5")
+
+        monkeypatch.setattr(ista, "_fetch", fetch)
+        monkeypatch.setattr(dataset, "_ingest", no_ingest)
+        output = dataset._get(
+            scenario="A1", dataset_split=None, cache_dir=tmp_path, export_dir=None, output_format="sofa"
+        )
+        provider = tmp_path / "MIRACLE" / "provider" / "A1.sofa"
+        assert output.name == "A1.sofa"
+        assert output.read_bytes() == provider.read_bytes()
+        assert not (tmp_path / "MIRACLE" / "ingest").exists()
+
+    @pytest.mark.parametrize("filename", ["../unsafe.sofa", "/unsafe.sofa", "not-sofa.h5"])
+    def test_native_downloader_rejects_unsafe_api_filenames(self, tmp_path, miracle_manifest, filename):
+        """ISTA-specific naming must not allow writes outside the Provider directory."""
+        url = miracle_manifest.urls.pop("A1.sofa")
+        checksum = miracle_manifest.registry.pop("A1.sofa")
+        miracle_manifest.urls[filename] = url
+        miracle_manifest.registry[filename] = checksum
+        with pytest.raises(ValueError, match=r"requires a \.sofa basename"):
+            MiracleDataset()._download_direct_sofa(tmp_path, url, checksum)
+
+    @pytest.mark.parametrize("checksum", [None, "md5:different"])
+    def test_native_downloader_rejects_missing_or_changed_checksum(self, tmp_path, miracle_manifest, checksum):
+        """A second metadata lookup cannot silently change or disable verification."""
+        with pytest.raises(ValueError, match="Missing or changed SOFA checksum"):
+            MiracleDataset()._download_direct_sofa(tmp_path, miracle_manifest.urls["A1.sofa"], checksum)
+
+    @pytest.mark.parametrize("ambiguous", [False, True])
+    def test_native_downloader_requires_one_registered_filename(self, tmp_path, miracle_manifest, ambiguous):
+        """Do not guess filenames for unknown or ambiguous download URLs."""
+        url = miracle_manifest.urls["A1.sofa"]
+        if ambiguous:
+            miracle_manifest.urls["A2.sofa"] = url
+        else:
+            url = "https://example.test/not-in-record/content"
+        with pytest.raises(ValueError, match="No unique SOFA filename"):
+            MiracleDataset()._download_direct_sofa(tmp_path, url, miracle_manifest.registry["A1.sofa"])
+
+    @pytest.mark.parametrize(
+        ("scenario", "dataset_split", "output_format"),
+        [
+            ("A1", None, "raw"),
+            ("A2", None, "raw"),
+            ("D1", None, "raw"),
+            ("R2", None, "raw"),
+            ("A1", None, "sofa"),
+            ("A1", "C1", "sofa"),
+            ("A2", "C2", "sofa"),
+            ("R2", "C4", "sofa"),
+        ],
+    )
+    def test_raw_and_split_downloads_use_new_doi(self, tmp_path, monkeypatch, scenario, dataset_split, output_format):
+        """Raw and missing native SOFAs use HDF5, including artificial Splits."""
+
+        def pooch(doi, path=None):
+            assert doi == "10.14279/depositonce-26877"
+            return Path(path) if path is not None else SimpleNamespace(urls={}, registry={})
+
+        def fetch(directory, filename):
+            assert filename == f"{scenario}.h5"
+            _write_ista_hdf5(directory / filename, n_sources=4)
+            return str(directory / filename)
+
+        def no_sofa_lookup(_filename):
+            pytest.fail("Raw retrieval must not resolve native SOFA targets")
+
+        monkeypatch.setattr(ista, "_pooch_from_doi", pooch)
+        monkeypatch.setattr(ista, "_fetch", fetch)
+        dataset = MiracleDataset()
+        if output_format == "raw":
+            monkeypatch.setattr(dataset, "_direct_sofa", no_sofa_lookup)
+        output = dataset._get(
+            scenario=scenario,
+            dataset_split=dataset_split,
+            cache_dir=tmp_path,
+            export_dir=None,
+            output_format=output_format,
+        )
+        if output_format == "raw":
+            assert output.name == f"{scenario}.h5"
+            with h5py.File(output) as provider:
+                assert "data/impulse_response" in provider
+                assert "Data.IR" not in provider
+        else:
+            selection = scenario + (f"-{dataset_split}" if dataset_split else "")
+            assert output.name == f"{selection}.sofa"
+            with sf.SofaStream(output) as sofa:
+                assert sofa.verify(issue_handling="return", mode="read") is None
 
     def test_extract_split_preserves_permissions(self, tmp_path):
         """Verify extracted split files reuse the source file's permission bits."""

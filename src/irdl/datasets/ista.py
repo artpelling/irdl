@@ -20,7 +20,6 @@ import numpy as np
 from irdl import config
 from irdl._sofa import choose_ir_chunk_shape, write_ir_chunks
 from irdl.base import BaseDataset, DatasetCategory
-from irdl.datasets.sonicom import SonicomBaseDataset
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
 from irdl.utils import _preserve_permissions
@@ -34,6 +33,25 @@ class IstaBaseDataset(BaseDataset):
         scenario = dataset_kwargs["scenario"]
         split = dataset_kwargs.get("dataset_split")
         return f"{scenario}{('-' + split) if split else ''}.h5"
+
+    def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str | None) -> Path:
+        """Use the DOI's registered filename for a filename-free SOFA URL."""
+        provider_dir.mkdir(exist_ok=True, parents=True)
+        manifest = _pooch_from_doi(self.doi, path=provider_dir)
+        filenames = [name for name, target in manifest.urls.items() if target == url]
+        if len(filenames) != 1:
+            msg = f"No unique SOFA filename for {url!r} in {self.doi}"
+            raise ValueError(msg)
+        filename = filenames[0]
+        if Path(filename).name != filename or Path(filename).suffix.lower() != ".sofa":
+            msg = f"Direct SOFA download requires a .sofa basename: {filename!r}"
+            raise ValueError(msg)
+        checksum = manifest.registry.get(filename)
+        if not known_hash or not checksum or checksum.lower() != known_hash.lower():
+            msg = f"Missing or changed SOFA checksum for {filename!r} in {self.doi}"
+            raise ValueError(msg)
+        _fetch(manifest, filename)
+        return provider_dir / filename
 
     def _ingest(self, ingest_path: Path, sofa_path: Path, **dataset_kwargs) -> Path:
         """Stream an ISTA HDF5 ingest-ready file to SOFA without loading all IRs."""
@@ -370,15 +388,15 @@ def _canonical_array(data: np.ndarray, dtype: np.dtype) -> np.ndarray:
     return np.ascontiguousarray(array.astype(dtype, copy=False))
 
 
-class MiracleDataset(SonicomBaseDataset, IstaBaseDataset):
-    """Download the MIRACLE database from DepositOnce/SONICOM.
+class MiracleDataset(IstaBaseDataset):
+    """Download the MIRACLE database and native SOFAs from DepositOnce.
 
     Attributes
     ----------
     name : str
         Dataset name ("miracle").
     doi : str
-        Digital Object Identifier ("10.14279/depositonce-20837").
+        Digital Object Identifier ("10.14279/depositonce-26877").
     room_volume : float
         Room volume in cubic meters (830).
     measurement_date : float
@@ -387,13 +405,25 @@ class MiracleDataset(SonicomBaseDataset, IstaBaseDataset):
     """
 
     name = "miracle"
-    doi = "10.14279/depositonce-20837"
+    doi = "10.14279/depositonce-26877"
     _category = DatasetCategory.ROOM_IMPULSE_RESPONSES
-    sonicom_database_id = 98
     # metadata needed for creation of sofa file
     room_volume = 830
     room_type = "shoebox"
     measurement_date = 1697068800.0
+
+    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[None, None]:
+        """Find a matching native SOFA through DepositOnce, or fall back to HDF5."""
+        filename = Path(source_filename).with_suffix(".sofa").name
+        manifest = _pooch_from_doi(self.doi)
+        url = manifest.urls.get(filename)
+        if not url:
+            return None, None
+        checksum = manifest.registry.get(filename)
+        if not checksum:
+            msg = f"Missing native SOFA checksum for {filename!r} in {self.doi}"
+            raise ValueError(msg)
+        return url, checksum
 
     def _create_room_variables(self, sofa: netCDF4.Dataset, **dataset_kwargs) -> None:
         """Create MIRACLE's shoebox geometry in listener coordinates."""
