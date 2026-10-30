@@ -31,20 +31,18 @@ import numpy as np
 import pyfar as pf
 import sofar as sf
 
+from irdl import config
 from irdl.cache import IRDL_CACHE_DIR
 from irdl.downloader import _fetch, _pooch_from_static_registry
 from irdl.logging import logger
 from irdl.utils import _atomic_write, _link_or_copy, _preserve_permissions
-
-_SOFA_FIR_E_DIMS = 4
-DEFAULT_CHUNK_SIZE = 256
 
 
 class DatasetCategory(StrEnum):
     """Categories for grouping datasets."""
 
     ROOM_IMPULSE_RESPONSES = "room_impulse_responses"
-    HEAD_RELATED_IMPULSE_RESPONSES = "head_related_impulse_responses"
+    HEAD_RELATED_IMPULSE_RESPONSES = "head-related_impulse_responses"
 
 
 class BaseDataset(ABC):
@@ -77,21 +75,20 @@ class BaseDataset(ABC):
 
     name: str
     doi: str
-    _chunk_size = DEFAULT_CHUNK_SIZE
 
     # Default docstring prefix for all get() classmethods
     _get_doc_prefix = """Download {name} dataset.
 
 Parameters
 ----------
-cache_dir : str
-    Cache directory for downloads. Defaults is the OS user cache directory.
-    This default can be overridden by setting `IRDL_CACHE_DIR` environment variable.
-export_dir : str, optional
-    Directory for final output. If specified, the data will be exported to <export_dir/{name}/>. Else, it remains in
-    <cache_dir/output/>.
-output_format : str
-    Output format: 'pyfar', 'numpy', 'hdf5', 'sofa', or 'raw'.
+cache_dir : pathlib.Path or str or None, optional
+    Cache directory. Default is None, which uses the OS user cache directory
+    or the `IRDL_CACHE_DIR` environment variable if set.
+export_dir : pathlib.Path or str or None, optional
+    Export directory. Default is None, which keeps output in <cache_dir/{name}/output/>.
+    If specified, output is exported to <export_dir/{name}/>.
+output_format : str, optional
+    Output format. One of 'pyfar', 'numpy', 'hdf5', 'sofa', or 'raw'.
 """
 
     def __init_subclass__(cls, **dataset_kwargs) -> None:
@@ -106,10 +103,9 @@ output_format : str
         if hasattr(cls, "get") and hasattr(cls, "name"):
             # Get the underlying function of the classmethod
             get_func = cls.get.__func__
-            # Get the first line of the class docstring for the summary
+            # Join wrapped class summaries before composing the get() docstring.
             class_doc = cls.__doc__ or ""
-            doc_lines = class_doc.strip().split("\n") if class_doc.strip() else []
-            summary_line = doc_lines[0] if doc_lines else ""
+            summary_line = " ".join(class_doc.strip().split("\n\n", 1)[0].split())
             doi_cli_line = f"DOI: https://doi.org/{cls.doi}"
             # Format prefix with class attributes
             prefix = BaseDataset._get_doc_prefix.format(name=cls.name.upper(), doi=cls.doi)
@@ -130,6 +126,7 @@ output_format : str
                 full_doc += suffix
             get_func.__doc__ = full_doc
 
+    @config._batch_budget()
     def _get(
         self,
         cache_dir: Path | str | None,
@@ -554,10 +551,7 @@ output_format : str
 
     def _to_hdf5(self, sofa_path: Path, output_path: Path) -> Path:
         """Convert a SOFA file to IRDL HDF5 without loading all IR data."""
-        chunk_size = int(self._chunk_size)
-        if chunk_size <= 0:
-            msg = "_chunk_size must be > 0"
-            raise ValueError(msg)
+        batch_bytes = config._get_batch_bytes()
 
         with (
             _atomic_write(output_path) as tmp_output_path,
@@ -567,12 +561,28 @@ output_format : str
         ):
             data_group = f.create_group("data")
             ir = sofa.variables["Data.IR"]
-            has_single_emitter = len(ir.shape) == _SOFA_FIR_E_DIMS and ir.shape[-1] == 1
+            has_single_emitter = len(ir.shape) == 4 and ir.shape[-1] == 1  # noqa: PLR2004 - FIR-E: M, R, N, E.
             ir_shape = ir.shape[:-1] if has_single_emitter else ir.shape
             output_ir = data_group.create_dataset("impulse_response", shape=ir_shape, dtype=ir.dtype)
-            for start in range(0, ir_shape[0], chunk_size):
-                row_slice = slice(start, min(start + chunk_size, ir_shape[0]))
-                output_ir[row_slice] = ir[row_slice, :, :, 0] if has_single_emitter else ir[row_slice]
+            # Follow stored chunks, but cap oversized or contiguous inputs in bytes too.
+            chunks = ir.chunking()
+            if not isinstance(chunks, list):
+                chunks = list(ir.shape)
+            values_left = max(1, batch_bytes // ir.dtype.itemsize)
+            for axis in range(len(chunks) - 1, -1, -1):
+                chunks[axis] = min(max(1, chunks[axis]), values_left)
+                values_left = max(1, values_left // chunks[axis])
+            counts = tuple((size + step - 1) // step for size, step in zip(ir.shape, chunks, strict=True))
+            for index in np.ndindex(counts):
+                selection = tuple(
+                    slice(offset * step, min((offset + 1) * step, size))
+                    for offset, step, size in zip(index, chunks, ir.shape, strict=True)
+                )
+                data = ir[selection]
+                if has_single_emitter:
+                    selection = selection[:-1]
+                    data = data[..., 0]
+                output_ir[selection] = data
 
             loc_group = data_group.create_group("location")
             loc_group.create_dataset("source", data=sofa.variables["SourcePosition"][:])

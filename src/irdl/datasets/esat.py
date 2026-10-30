@@ -20,7 +20,9 @@ from irdl.logging import logger
 
 
 class MyriadDataset(BaseDataset):
-    """Download the MYRiAD database (RIR subset) from Zenodo.
+    """Download the Multi-Array Room Acoustic Database (MYRiAD) from Zenodo.
+
+    Only the RIR subset is supported.
 
     Attributes
     ----------
@@ -66,18 +68,18 @@ class MyriadDataset(BaseDataset):
         output_format: str = "pyfar",
     ) -> dict | Path | None:
         """
-        room : str
-            Room to load. Either ``'SAL'`` or ``'AIL'``. Default is ``'SAL'``.
-        array : str
+        room : str, optional
+            Room to load. Either ``'SAL'`` or ``'AIL'``.
+        array : str, optional
             Microphone array group(s) to load. One of ``'dummy_head'``,
             ``'bte-pieces'``, ``'external-microphones'``, ``'circular-microphone-array'``,
             a comma-separated combination of these (e.g. ``'dummy_head,bte-pieces'``),
             or ``'all'`` for every group available in the room.
             A list of group names is also accepted via the Python API.
-            The circular array is only available in ``'AIL'``. Default is ``'all'``.
-        config : str
+            The circular array is only available in ``'AIL'``.
+        config : str, optional
             Microphone configuration placement in the AIL. Either ``'P1'`` or ``'P2'``.
-            Ignored for the SAL. Default is ``'P1'``.
+            Ignored for the SAL.
 
         Returns
         -------
