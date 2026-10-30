@@ -42,7 +42,7 @@ class DatasetCategory(StrEnum):
     """Categories for grouping datasets."""
 
     ROOM_IMPULSE_RESPONSES = "room_impulse_responses"
-    HEAD_RELATED_IMPULSE_RESPONSES = "head_related_impulse_responses"
+    HEAD_RELATED_IMPULSE_RESPONSES = "head-related_impulse_responses"
 
 
 class BaseDataset(ABC):
@@ -81,14 +81,14 @@ class BaseDataset(ABC):
 
 Parameters
 ----------
-cache_dir : str
-    Cache directory for downloads. Defaults is the OS user cache directory.
-    This default can be overridden by setting `IRDL_CACHE_DIR` environment variable.
-export_dir : str, optional
-    Directory for final output. If specified, the data will be exported to <export_dir/{name}/>. Else, it remains in
-    <cache_dir/output/>.
-output_format : str
-    Output format: 'pyfar', 'numpy', 'hdf5', 'sofa', or 'raw'.
+cache_dir : pathlib.Path or str or None, optional
+    Cache directory. Default is None, which uses the OS user cache directory
+    or the `IRDL_CACHE_DIR` environment variable if set.
+export_dir : pathlib.Path or str or None, optional
+    Export directory. Default is None, which keeps output in <cache_dir/{name}/output/>.
+    If specified, output is exported to <export_dir/{name}/>.
+output_format : str, optional
+    Output format. One of 'pyfar', 'numpy', 'hdf5', 'sofa', or 'raw'.
 """
 
     def __init_subclass__(cls, **dataset_kwargs) -> None:
@@ -103,10 +103,9 @@ output_format : str
         if hasattr(cls, "get") and hasattr(cls, "name"):
             # Get the underlying function of the classmethod
             get_func = cls.get.__func__
-            # Get the first line of the class docstring for the summary
+            # Join wrapped class summaries before composing the get() docstring.
             class_doc = cls.__doc__ or ""
-            doc_lines = class_doc.strip().split("\n") if class_doc.strip() else []
-            summary_line = doc_lines[0] if doc_lines else ""
+            summary_line = " ".join(class_doc.strip().split("\n\n", 1)[0].split())
             doi_cli_line = f"DOI: https://doi.org/{cls.doi}"
             # Format prefix with class attributes
             prefix = BaseDataset._get_doc_prefix.format(name=cls.name.upper(), doi=cls.doi)

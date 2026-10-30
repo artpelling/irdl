@@ -19,7 +19,7 @@ from irdl.utils import _preserve_permissions
 
 
 class Meshgrid3dDataset(BaseDataset):
-    """Download the 3D Meshgrid Room Impulse Response Dataset."""
+    """Download the 3D Meshgrid Room Impulse Response dataset from Zenodo."""
 
     name = "3dmeshgrid"
     doi = "10.5281/zenodo.17051811"
@@ -34,8 +34,8 @@ class Meshgrid3dDataset(BaseDataset):
         output_format: str = "pyfar",
     ) -> dict | Path | None:
         """
-        speaker : int
-            Loudspeaker position to retrieve, from 1 to 4. Default is 1.
+        speaker : int, optional
+            Loudspeaker position to retrieve, from 1 to 4.
 
         Notes
         -----

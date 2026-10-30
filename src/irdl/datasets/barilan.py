@@ -12,7 +12,7 @@ from irdl.downloader import _fetch, _pooch_from_doi
 
 
 class DechorateDataset(SonicomBaseDataset, BaseDataset):
-    """Download the dEchorate database from Zenodo/SONICOM."""
+    """Download the dEchorate dataset from Zenodo/SONICOM."""
 
     name = "dechorate"
     doi = "10.5281/zenodo.6576203"
@@ -34,11 +34,11 @@ class DechorateDataset(SonicomBaseDataset, BaseDataset):
     ) -> dict | Path | None:
         """
         room_code : str, optional
-            Six-digit wall configuration code. Default is ``'000000'``.
+            Six-digit wall configuration code.
         source : int, optional
-            Directional loudspeaker index from 1 through 9. Default is 1.
+            Directional loudspeaker index from 1 through 9.
         array : int, optional
-            Five-microphone array index from 1 through 6. Default is 1.
+            Five-microphone array index from 1 through 6.
 
         Returns
         -------

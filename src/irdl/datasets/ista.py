@@ -389,7 +389,10 @@ def _canonical_array(data: np.ndarray, dtype: np.dtype) -> np.ndarray:
 
 
 class MiracleDataset(IstaBaseDataset):
-    """Download the MIRACLE database and native SOFAs from DepositOnce.
+    """Download the Microphone Array Impulse Response Dataset for Acoustic Learning (MIRACLE)
+    from DepositOnce.
+
+    Native SOFA artifacts are available alongside the provider HDF5 files.
 
     Attributes
     ----------
@@ -402,7 +405,7 @@ class MiracleDataset(IstaBaseDataset):
     measurement_date : float
         Release date in POSIX seconds, used as the SOFA MeasurementDate
         (no per-measurement date is available).
-    """
+    """  # noqa: D205
 
     name = "miracle"
     doi = "10.14279/depositonce-26877"
@@ -451,11 +454,11 @@ class MiracleDataset(IstaBaseDataset):
         output_format: str = "pyfar",
     ) -> dict | Path | None:
         """
-        scenario : str
-            Scenario to download. One of 'A1', 'A2', 'D1', 'R2'.
+        scenario : str, optional
+            Scenario to download. One of 'A1', 'A2', 'D1', or 'R2'.
         dataset_split : str or None, optional
-            Artificial dataset split. One of 'C1', 'C2', 'C3', 'C4' or None.
-            Dense scenarios (D1) cannot be split.
+            Dataset split. One of 'C1', 'C2', 'C3', 'C4', or None.
+            Dense scenarios ('D1') cannot be split. Default is None.
 
         Returns
         -------
@@ -621,7 +624,8 @@ class MiracleDataset(IstaBaseDataset):
 
 
 class SrirachaDataset(IstaBaseDataset):
-    """Download and merge the SRIRACHA database from DepositOnce.
+    """Download the Shoebox Room Impulse Response Archive with Varying Absorption (SRIRACHA)
+    from DepositOnce.
 
     Attributes
     ----------
@@ -634,7 +638,7 @@ class SrirachaDataset(IstaBaseDataset):
     measurement_date : float
         Release date in POSIX seconds, used as the SOFA MeasurementDate
         (no per-measurement date is available).
-    """
+    """  # noqa: D205
 
     name = "sriracha"
     doi = "10.14279/depositonce-23943"
@@ -697,10 +701,10 @@ class SrirachaDataset(IstaBaseDataset):
         """
         scenario : str, optional
             Scenario to download. One of 'SR1', 'SRA1', 'SR1-D', 'SRA1-D',
-            'SR2', 'SRA2', 'SR2-D', 'SRA2-D'. Default is 'SR1-D'.
+            'SR2', 'SRA2', 'SR2-D', or 'SRA2-D'.
         dataset_split : str or None, optional
-            Optional dataset split for full-plane scenarios. One of 'C1',
-            'C2', 'C3', 'C4' or None. Dense scenarios (ending in '-D') do not
+            Dataset split for full-plane scenarios. One of 'C1',
+            'C2', 'C3', 'C4', or None. Dense scenarios (ending in '-D') do not
             have splits. Default is None.
 
         Returns
