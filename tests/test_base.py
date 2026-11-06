@@ -5,10 +5,12 @@ from zipfile import ZipFile
 
 import pytest
 import sofar as sf
+from numpydoc.docscrape import FunctionDoc
 
 from irdl.base import BaseDataset
 from irdl.datasets.akt import AKTZipBaseDataset
 from irdl.datasets.ista import IstaBaseDataset
+from irdl.utils import _validate_hash_registry
 
 
 class TestBaseDatasetAbstract:
@@ -38,6 +40,28 @@ class TestBaseDatasetAbstract:
 
 class TestBaseDatasetHelpers:
     """Tests for shared BaseDataset helper behavior."""
+
+    def test_get_docstring_normalizes_indented_dataset_parameters(self):
+        """Python 3.11/3.12 retain indentation in the Dataset-specific docstring."""
+
+        class IndentedDocDataset(BaseDataset):
+            name = "indented"
+            doi = "10.0000/indented"
+
+            @classmethod
+            def get(cls, scenario="A1"):
+                """Return the selected Scenario."""
+                return scenario
+
+            get.__func__.__doc__ = (
+                "\n        scenario : str, optional\n"
+                "            Scenario to retrieve. Default is 'A1'.\n"
+                "\n        Returns\n        -------\n        str\n            Selected Scenario.\n"
+            )
+
+        parameters = {param.name: param for param in FunctionDoc(IndentedDocDataset.get)["Parameters"]}
+        assert parameters["scenario"].desc == ["Scenario to retrieve. Default is 'A1'."]
+        assert "output_format" in parameters
 
     def test_output_path_accepts_source_filename_string(self, tmp_path):
         """Verify file-based output paths work when _source_filename returns a string."""
@@ -141,6 +165,22 @@ class TestDirectSofaProvider:
         assert result.exists()
         assert (tmp_path / "DIRECT" / "provider" / "alternate.sofa").exists()
         assert not (tmp_path / "DIRECT" / "ingest").exists()
+
+    @pytest.mark.parametrize("endpoint", ["download", "content"])
+    def test_generic_downloader_still_requires_named_sofa_urls(self, tmp_path, endpoint):
+        """Filename-free provider URLs remain the Dataset subclass's responsibility."""
+        with pytest.raises(ValueError, match=r"must name a \.sofa file"):
+            BaseDataset._download_direct_sofa(None, tmp_path, f"https://example.test/{endpoint}", "md5:known")
+
+    def test_hash_registry_supports_pinned_sha256(self):
+        """Keep packaged content pins separate from API-provided checksums."""
+        _validate_hash_registry("test", {"example.sofa": "sha256:" + "a" * 64})
+
+    @pytest.mark.parametrize("digest", ["md5:" + "a" * 32, "unknown:checksum"])
+    def test_hash_registry_rejects_unsupported_digest(self, digest):
+        """Packaged registries retain SHA256-only pins; API checksums bypass them."""
+        with pytest.raises(ValueError, match="invalid digest"):
+            _validate_hash_registry("test", {"example.sofa": digest})
 
     def test_non_raw_logs_canonical_fallback(self, caplog, sofa_object, tmp_path):
         """Log when no direct SOFA is available."""

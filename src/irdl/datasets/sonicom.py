@@ -92,7 +92,7 @@ class SonicomBaseDataset:
 
 
 class CipicDataset(SonicomBaseDataset, BaseDataset):
-    """Download the CIPIC HRTF database from SONICOM."""
+    """Download the CIPIC dataset from SONICOM."""
 
     name = "cipic"
     doi = "10.1109/ASPAA.2001.969552"
@@ -114,7 +114,7 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
     ) -> dict | Path | None:
         """
         subject : int, optional
-            CIPIC subject identifier. Default is 3.
+            CIPIC subject identifier.
 
         Returns
         -------
@@ -142,7 +142,7 @@ class CipicDataset(SonicomBaseDataset, BaseDataset):
 
 
 class AriDataset(SonicomBaseDataset, BaseDataset):
-    """Download the ARI database from SONICOM."""
+    """Download the ARI dataset from SONICOM."""
 
     name = "ari"
     doi = "10.3758/APP.72.2.454"
@@ -166,9 +166,9 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
         """
         subject : str, optional
             ARI subject identifier from series B, C, or D, for example 'b_nh10',
-            'c_nh1000', or 'd_nh1407'. Default is 'b_nh10'.
+            'c_nh1000', or 'd_nh1407'.
         kind : str, optional
-            File type: 'hrtf' or 'dtf'. Default is 'hrtf'.
+            File type: 'hrtf' or 'dtf'.
 
         Returns
         -------
@@ -207,7 +207,9 @@ class AriDataset(SonicomBaseDataset, BaseDataset):
 
 
 class SadieDataset(SonicomBaseDataset, BaseDataset):
-    """Download the SADIE II database from SONICOM."""
+    """Download the Spatial Audio for Domestic Interactive Entertainment (SADIE II) dataset
+    from SONICOM.
+    """  # noqa: D205
 
     name = "sadie"
     doi = "10.3390/app8112029"
@@ -230,7 +232,7 @@ class SadieDataset(SonicomBaseDataset, BaseDataset):
         """
         subject : str, optional
             SADIE II listener or dummy-head identifier. One of 'D1', 'D2',
-            or 'H3' through 'H20'. Default is 'H3'.
+            or 'H3' through 'H20'.
 
         Returns
         -------

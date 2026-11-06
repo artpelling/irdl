@@ -8,8 +8,10 @@ import h5py
 import netCDF4
 import numpy as np
 import pyfar as pf
+import pytest
 import sofar as sf
 
+from irdl import config
 from irdl.base import BaseDataset
 
 
@@ -213,6 +215,53 @@ class TestConversionToHdf5:
                 assert "temperature" in f["metadata"]
                 assert "humidity" in f["metadata"]
                 assert "c0" in f["metadata"]
+
+    @pytest.mark.parametrize("emitters", [1, 2])
+    @pytest.mark.parametrize("compressed", [False, True])
+    def test_conversion_to_hdf5_bounds_large_rows_and_preserves_emitters(
+        self, tmp_path, monkeypatch, emitters, compressed
+    ):
+        """Stored chunks and contiguous arrays both obey the byte budget, including E>1."""
+        shape = (1, 5, 17, emitters)
+        expected = np.arange(np.prod(shape), dtype=np.float64).reshape(shape)
+        expected.flat[-1] = -0.0
+        source = tmp_path / "tiled.sofa"
+        with netCDF4.Dataset(source, "w") as sofa:
+            for name, size in zip(("M", "R", "N", "E"), shape, strict=True):
+                sofa.createDimension(name, size)
+            sofa.createDimension("C", 3)
+            sofa.createDimension("I", 1)
+            ir = sofa.createVariable(
+                "Data.IR",
+                "f8",
+                ("M", "R", "N", "E"),
+                zlib=compressed,
+                chunksizes=(1, 3, 7, emitters) if compressed else None,
+            )
+            ir[:] = expected
+            sofa.createVariable("SourcePosition", "f8", ("M", "C"))[:] = 0
+            sofa.createVariable("ReceiverPosition", "f8", ("R", "C", "I"))[:] = 0
+            sofa.createVariable("Data.SamplingRate", "f8", ("I",))[:] = 48000
+        budget = 64
+        writes = []
+        setitem = h5py.Dataset.__setitem__
+
+        def bounded_write(destination, selection, values):
+            if destination.name == "/data/impulse_response":
+                assert values.nbytes <= budget
+                writes.append(values.nbytes)
+            return setitem(destination, selection, values)
+
+        monkeypatch.setattr(config, "batch_bytes", budget)
+        monkeypatch.setattr(h5py.Dataset, "__setitem__", bounded_write)
+        output = test_dataset._to_hdf5(source, tmp_path / "bounded.h5")
+
+        assert len(writes) > 1
+        with h5py.File(output) as result:
+            actual = result["data/impulse_response"][:]
+            wanted = expected[..., 0] if emitters == 1 else expected
+            assert actual.shape == wanted.shape
+            assert actual.tobytes() == wanted.tobytes()
 
     def test_conversion_to_hdf5_preserves_permissions(self, sofa_object, tmp_path):
         """Verify _to_hdf5 reuses the source SOFA file's permission bits."""

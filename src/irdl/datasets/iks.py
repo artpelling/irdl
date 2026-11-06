@@ -19,7 +19,10 @@ from irdl.utils import load_hash_registry
 
 
 class MirdDataset(BaseDataset):
-    """Download MIRD measurements for one or both source distances."""
+    """Download the Multi-Channel Impulse Response Database (MIRD) from RWTH Aachen.
+
+    Retrieve measurements for one or both source distances.
+    """
 
     name = "mird"
     doi = "10.1109/IWAENC.2014.6954309"
@@ -42,15 +45,15 @@ class MirdDataset(BaseDataset):
         remove_delay: bool = True,
     ) -> dict | Path | None:
         """
-        t60 : float
+        t60 : float, optional
             Reverberation time in seconds. One of 0.16, 0.36, or 0.61.
-        spacing : int
-            Nominal inter-microphone spacing in centimetres: 3, 4, or 8.
-        distance : int or str
-            Source distance in metres: 1, 2, or 'both'. Each selected distance
-            includes all 13 measured azimuths. Default is 'both'.
-        remove_delay : bool
-            Remove MIRD's recorded additional delay. Default is True.
+        spacing : int, optional
+            Nominal inter-microphone spacing in centimetres. One of 3, 4, or 8.
+        distance : int or str, optional
+            Source distance in metres. One of 1, 2, or 'both'. Each selected distance
+            includes all 13 measured azimuths.
+        remove_delay : bool, optional
+            Remove MIRD's recorded additional delay.
         """  # noqa: D205
         return cls()._get(
             t60=t60,

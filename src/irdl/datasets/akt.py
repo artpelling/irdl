@@ -86,7 +86,8 @@ class AKTZipBaseDataset(BaseDataset):
 
 
 class BrasRs8Dataset(AKTZipBaseDataset):
-    """Download the BRAS RS8 dataset from DepositOnce.
+    """Download the Benchmark for Room Acoustical Simulation, Reference Scene 8 (BRAS-RS8)
+    dataset from DepositOnce.
 
     BRAS RS8 extends the Benchmark for Room Acoustical Simulation (BRAS) by a
     finite curved reflector. The dataset contains nine scenes with various source
@@ -100,7 +101,7 @@ class BrasRs8Dataset(AKTZipBaseDataset):
         Dataset name ("bras-rs8").
     doi : str
         Digital Object Identifier ("10.14279/depositonce-25649").
-    """
+    """  # noqa: D205
 
     name = "bras-rs8"
     doi = "10.14279/depositonce-25649"
@@ -120,7 +121,6 @@ class BrasRs8Dataset(AKTZipBaseDataset):
             Scene identifier to download. One of:
             '01a', '01b', '01c', '02',
             '03a', '03b', '03c', '03d', '03e'.
-            Default is '01a'.
 
         Returns
         -------
@@ -182,7 +182,7 @@ class BrasRs8Dataset(AKTZipBaseDataset):
 
 
 class FabianDataset(SonicomBaseDataset, AKTZipBaseDataset):
-    """Download the FABIAN HRTF database from DepositOnce/SONICOM.
+    """Download the FABIAN dataset from DepositOnce/SONICOM.
 
     Attributes
     ----------
@@ -209,10 +209,10 @@ class FabianDataset(SonicomBaseDataset, AKTZipBaseDataset):
     ) -> dict | Path | None:
         """
         kind : str, optional
-            Type of HRTF to download. Either 'measured' or 'simulated'. Default is 'measured'.
+            Type of HRTF to download. Either 'measured' or 'simulated'.
         hato : int, optional
             Head-above-torso-rotation of HRTFs in degrees.
-            One of: 0, 10, 20, 30, 40, 50, 310, 320, 330, 340, 350. Default is 0.
+            One of: 0, 10, 20, 30, 40, 50, 310, 320, 330, 340, 350.
 
         Returns
         -------
@@ -276,7 +276,7 @@ class FabianDataset(SonicomBaseDataset, AKTZipBaseDataset):
 
 
 class HutubsDataset(SonicomBaseDataset, AKTZipBaseDataset):
-    """Download the HUTUBS HRTF database from DepositOnce/SONICOM."""
+    """Download the HUTUBS dataset from DepositOnce/SONICOM."""
 
     name = "hutubs"
     doi = "10.14279/depositonce-8487"
@@ -295,9 +295,9 @@ class HutubsDataset(SonicomBaseDataset, AKTZipBaseDataset):
     ) -> dict | Path | None:
         """
         subject : int, optional
-            Subject identifier. Must be an integer in the range 1 to 96. Default is 1.
+            Subject identifier. Must be an integer in the range 1 to 96.
         kind : str, optional
-            HUTUBS HRIR variant. Either 'measured' or 'simulated'. Default is 'measured'.
+            HUTUBS HRIR variant. Either 'measured' or 'simulated'.
 
         Returns
         -------

@@ -190,16 +190,20 @@ def cache_prune_command(
 
 
 def _get_dataset_description(dataset_class: type) -> str:
-    """Get the first line of a dataset class's docstring."""
+    """Get the summary paragraph of a dataset class's docstring."""
     docstring = dataset_class.__doc__ or ""
-    return docstring.strip().split("\n")[0] if docstring.strip() else ""
+    return " ".join(docstring.strip().split("\n\n", 1)[0].split())
 
 
 def _display_dataset(dataset_class: type) -> None:
-    """Display a single dataset with its description and DOI."""
+    """Display a single dataset with its description, Provider, and DOI."""
     typer.echo(f"  {typer.style(dataset_class.name, fg=typer.colors.BRIGHT_CYAN)}")
     description = _get_dataset_description(dataset_class)
-    if description:
+    summary, separator, provider = description.rpartition(" from ")
+    if separator:
+        typer.echo(f"    {summary}.")
+        typer.echo(f"    Provider: {provider.removesuffix('.')}")
+    elif description:
         typer.echo(f"    {description}")
     typer.echo(f"    DOI: https://doi.org/{dataset_class.doi}")
 
