@@ -26,13 +26,26 @@ from irdl.utils import _preserve_permissions
 
 
 class IstaBaseDataset(BaseDataset):
-    """Base class for HDF5-based datasets from ISTA (MIRACLE, SRIRACHA)."""
+    """Base class for native SOFA and HDF5 datasets from ISTA (MIRACLE, SRIRACHA)."""
 
     def _source_filename(self, **dataset_kwargs) -> str:
         """Construct the selection name used for ingest and output paths."""
         scenario = dataset_kwargs["scenario"]
         split = dataset_kwargs.get("dataset_split")
         return f"{scenario}{('-' + split) if split else ''}.h5"
+
+    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[None, None]:
+        """Find a matching native SOFA through DepositOnce, or fall back to HDF5."""
+        filename = Path(source_filename).with_suffix(".sofa").name
+        manifest = _pooch_from_doi(self.doi)
+        url = manifest.urls.get(filename)
+        if not url:
+            return None, None
+        checksum = manifest.registry.get(filename)
+        if not checksum:
+            msg = f"Missing native SOFA checksum for {filename!r} in {self.doi}"
+            raise ValueError(msg)
+        return url, checksum
 
     def _download_direct_sofa(self, provider_dir: Path, url: str, known_hash: str | None) -> Path:
         """Use the DOI's registered filename for a filename-free SOFA URL."""
@@ -415,19 +428,6 @@ class MiracleDataset(IstaBaseDataset):
     room_type = "shoebox"
     measurement_date = 1697068800.0
 
-    def _direct_sofa(self, source_filename: str) -> tuple[str, str] | tuple[None, None]:
-        """Find a matching native SOFA through DepositOnce, or fall back to HDF5."""
-        filename = Path(source_filename).with_suffix(".sofa").name
-        manifest = _pooch_from_doi(self.doi)
-        url = manifest.urls.get(filename)
-        if not url:
-            return None, None
-        checksum = manifest.registry.get(filename)
-        if not checksum:
-            msg = f"Missing native SOFA checksum for {filename!r} in {self.doi}"
-            raise ValueError(msg)
-        return url, checksum
-
     def _create_room_variables(self, sofa: netCDF4.Dataset, **dataset_kwargs) -> None:
         """Create MIRACLE's shoebox geometry in listener coordinates."""
         array_z = {"A1": 7.5355, "A2": 6.8, "D1": 7.531, "R2": 6.8}[dataset_kwargs["scenario"]]
@@ -627,12 +627,16 @@ class SrirachaDataset(IstaBaseDataset):
     """Download the Shoebox Room Impulse Response Archive with Varying Absorption (SRIRACHA)
     from DepositOnce.
 
+    Native SOFA artifacts cover dense Scenarios, explicit Splits, and merged
+    full planes. Raw retrieval uses Provider HDF5 files and requires a dense
+    Scenario or an explicit Split; full-plane raw retrieval is not supported.
+
     Attributes
     ----------
     name : str
         Dataset name ("sriracha").
     doi : str
-        Digital Object Identifier ("10.14279/depositonce-23943").
+        Digital Object Identifier ("10.14279/depositonce-26873").
     room_volume : float
         Room volume in cubic meters (73.5).
     measurement_date : float
@@ -641,7 +645,7 @@ class SrirachaDataset(IstaBaseDataset):
     """  # noqa: D205
 
     name = "sriracha"
-    doi = "10.14279/depositonce-23943"
+    doi = "10.14279/depositonce-26873"
     _category = DatasetCategory.ROOM_IMPULSE_RESPONSES
     _split_offsets = (
         ("C1", (0, 0)),

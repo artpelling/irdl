@@ -228,6 +228,9 @@ def _local_dataset(provider_dir):
     class LocalSrirachaDataset(SrirachaDataset):
         name = "local-sriracha"
 
+        def _direct_sofa(self, _source_filename):
+            return None, None
+
         def _download(self, _provider_dir, **_kwargs):
             return provider_dir
 

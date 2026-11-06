@@ -250,8 +250,138 @@ class TestMiracleProcessing:
                 np.testing.assert_allclose(sofa["RoomCornerB"][:], [corner_b])
 
 
+_SRIRACHA_SELECTIONS = [
+    (scenario, split)
+    for scenario in ("SR1", "SRA1", "SR2", "SRA2", "SR1-D", "SRA1-D", "SR2-D", "SRA2-D")
+    for split in ((None,) if scenario.endswith("-D") else (None, "C1", "C2", "C3", "C4"))
+]
+
+
+@pytest.fixture
+def sriracha_manifest(monkeypatch):
+    """Model all native SOFA selections in the new SRIRACHA release."""
+    filenames = [f"{scenario}{('-' + split) if split else ''}.sofa" for scenario, split in _SRIRACHA_SELECTIONS]
+    manifest = SimpleNamespace(
+        urls={name: f"https://example.test/{name.removesuffix('.sofa')}/content" for name in filenames},
+        registry={name: f"MD5:{index:032x}" for index, name in enumerate(filenames)},
+    )
+
+    def discover(doi, path=None):
+        assert doi == "10.14279/depositonce-26873"
+        if path is not None:
+            manifest.abspath = Path(path)
+        return manifest
+
+    monkeypatch.setattr(ista, "_pooch_from_doi", discover)
+    return manifest
+
+
 class TestSrirachaProcessing:
     """Tests for SRIRACHA-specific processing helpers."""
+
+    @pytest.mark.parametrize(("scenario", "dataset_split"), _SRIRACHA_SELECTIONS)
+    @pytest.mark.parametrize("output_format", ["sofa", "hdf5", "numpy", "pyfar"])
+    def test_native_sofa_bypasses_hdf5_for_every_selection(
+        self, *, tmp_path, monkeypatch, sofa_object, sriracha_manifest, scenario, dataset_split, output_format
+    ):
+        """All non-raw formats use API-verified SOFA without processing HDF5 Splits."""
+        dataset = SrirachaDataset()
+        source_filename = dataset._source_filename(scenario=scenario, dataset_split=dataset_split)
+        filename = Path(source_filename).with_suffix(".sofa").name
+        assert dataset.doi == "10.14279/depositonce-26873"
+        assert dataset._direct_sofa(source_filename) == (
+            sriracha_manifest.urls[filename],
+            sriracha_manifest.registry[filename],
+        )
+        fetched = []
+
+        def fetch(manifest, name):
+            assert name == filename
+            assert manifest.registry[name] == sriracha_manifest.registry[filename]
+            fetched.append(name)
+            path = Path(manifest.abspath) / name
+            sf.write_sofa(path, sofa_object)
+            return str(path)
+
+        def no_hdf5(*_args, **_kwargs):
+            pytest.fail("Native SOFA retrieval must not acquire, process, or ingest HDF5")
+
+        monkeypatch.setattr(ista, "_fetch", fetch)
+        for method in ("_download", "_process", "_ingest"):
+            monkeypatch.setattr(dataset, method, no_hdf5)
+        output = dataset._get(
+            scenario=scenario,
+            dataset_split=dataset_split,
+            cache_dir=tmp_path,
+            export_dir=None,
+            output_format=output_format,
+        )
+        assert fetched == [filename]
+        cache = tmp_path / "SRIRACHA"
+        assert (cache / "output" / filename).read_bytes() == (cache / "provider" / filename).read_bytes()
+        assert not (cache / "ingest").exists()
+        if output_format in ("numpy", "pyfar"):
+            assert "impulse_response" in output
+        else:
+            assert output.is_file()
+
+    def test_missing_sofa_uses_hdf5_but_missing_checksum_is_an_error(self, sriracha_manifest):
+        """Only missing artifacts, not missing verification, allow HDF5 fallback."""
+        dataset = SrirachaDataset()
+        sriracha_manifest.registry["SR1.sofa"] = None
+        with pytest.raises(ValueError, match="Missing native SOFA checksum"):
+            dataset._direct_sofa("SR1.h5")
+        sriracha_manifest.urls.pop("SR1.sofa")
+        assert dataset._direct_sofa("SR1.h5") == (None, None)
+
+    @pytest.mark.parametrize(
+        ("scenario", "dataset_split"),
+        [(scenario, split) for scenario, split in _SRIRACHA_SELECTIONS if split or scenario.endswith("-D")],
+    )
+    def test_raw_uses_new_hdf5_source_without_processing(self, tmp_path, monkeypatch, scenario, dataset_split):
+        """Raw still returns an unchanged dense or explicit Split Provider HDF5 file."""
+        filename = SrirachaDataset()._source_filename(scenario=scenario, dataset_split=dataset_split)
+        fetched = []
+
+        def discover(doi, path=None):
+            assert doi == "10.14279/depositonce-26873"
+            return Path(path)
+
+        def fetch(directory, name):
+            assert name == filename
+            fetched.append(name)
+            _write_ista_hdf5(directory / name, n_sources=1)
+            return str(directory / name)
+
+        def no_processing(*_args, **_kwargs):
+            pytest.fail("Raw retrieval must not resolve SOFA, process, or ingest")
+
+        dataset = SrirachaDataset()
+        monkeypatch.setattr(ista, "_pooch_from_doi", discover)
+        monkeypatch.setattr(ista, "_fetch", fetch)
+        for method in ("_direct_sofa", "_process", "_ingest"):
+            monkeypatch.setattr(dataset, method, no_processing)
+        output = dataset._get(
+            scenario=scenario, dataset_split=dataset_split, cache_dir=tmp_path, export_dir=None, output_format="raw"
+        )
+        assert output == tmp_path / "SRIRACHA" / "provider" / filename
+        assert fetched == [filename]
+        with h5py.File(output) as provider:
+            assert "data/impulse_response" in provider
+            assert "Data.IR" not in provider
+
+    @pytest.mark.parametrize("scenario", ["SR1", "SRA1", "SR2", "SRA2"])
+    def test_full_plane_raw_is_still_rejected_before_discovery(self, tmp_path, monkeypatch, scenario):
+        """Native merged SOFA does not change the unchanged-Provider raw contract."""
+
+        def no_discovery(*_args, **_kwargs):
+            pytest.fail("Unsupported raw selections must not query the DOI")
+
+        monkeypatch.setattr(ista, "_pooch_from_doi", no_discovery)
+        with pytest.raises(ValueError, match="raw output_format not supported"):
+            SrirachaDataset()._get(
+                scenario=scenario, dataset_split=None, cache_dir=tmp_path, export_dir=None, output_format="raw"
+            )
 
     @pytest.mark.parametrize(
         ("scenario", "dataset_split", "bitstream"),

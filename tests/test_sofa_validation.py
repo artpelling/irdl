@@ -139,6 +139,9 @@ def test_single_file_get_does_not_promote_failed_sofa(tmp_path, monkeypatch, fai
     class LocalSrirachaDataset(SrirachaDataset):
         name = "local-sriracha"
 
+        def _direct_sofa(self, _source_filename):
+            return None, None
+
         def _download(self, _provider_dir, **_kwargs):
             return source_path
 
