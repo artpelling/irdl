@@ -1,5 +1,6 @@
 """Tests for full-plane SRIRACHA Ingest through the shared IR writer."""
 
+import os
 from pathlib import Path
 from threading import get_ident
 
@@ -87,7 +88,8 @@ def test_full_plane_uses_shared_writer_and_preserves_order_and_metadata(tmp_path
         assert np.prod(sofa["Data.IR"].chunks) * 8 <= 1024**2
     with sf.SofaStream(path) as sofa:
         assert sofa.verify(issue_handling="return", mode="read") is None
-    assert path.stat().st_mode & 0o777 == provider_dir.stat().st_mode & 0o777
+    permission_mask = 0o200 if os.name == "nt" else 0o777
+    assert path.stat().st_mode & permission_mask == provider_dir.stat().st_mode & permission_mask
     assert sorted(file.name for file in provider_dir.iterdir()) == [f"SR1-C{number}.h5" for number in range(1, 5)]
 
 

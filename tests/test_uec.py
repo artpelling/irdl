@@ -5,6 +5,7 @@ import netCDF4
 import numpy as np
 import pytest
 import sofar as sf
+from rich.text import Text
 from typer.testing import CliRunner
 
 import irdl
@@ -364,11 +365,16 @@ def test_meshgrid_public_get_supports_all_formats_and_retains_canonical_sofa(tmp
         np.testing.assert_array_equal(actual_source, wanted_source)
 
 
-def test_meshgrid_cli_is_registered():
-    """CLI discovery picks up the new public Dataset and its speaker selector."""
+@pytest.mark.parametrize("force_color", [False, True])
+def test_meshgrid_cli_is_registered(monkeypatch, force_color):
+    """CLI discovery picks up the speaker selector with or without ANSI styling."""
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
     result = CliRunner().invoke(app, ["get", "3dmeshgrid", "--help"])
     assert result.exit_code == 0
-    assert "--speaker" in result.stdout
+    assert "--speaker" in Text.from_ansi(result.stdout).plain
 
 
 def test_meshgrid_reuses_canonical_sofa_after_source_files_are_removed(tmp_path, monkeypatch):

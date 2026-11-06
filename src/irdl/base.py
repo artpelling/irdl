@@ -20,7 +20,7 @@ import os
 import shutil
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from inspect import isabstract
+from inspect import cleandoc, isabstract
 from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlparse
@@ -119,11 +119,11 @@ output_format : str, optional
                 prefix_lines.insert(2, doi_cli_line)
                 prefix = "\n".join(prefix_lines)
             # Get subclass-specific docstring (from the base class _get method)
-            suffix = get_func.__doc__ or ""
+            suffix = cleandoc(get_func.__doc__ or "")
             # Combine: prefix + suffix
             full_doc = prefix
             if suffix:
-                full_doc += suffix
+                full_doc += "\n" + suffix
             get_func.__doc__ = full_doc
 
     @config._batch_budget()

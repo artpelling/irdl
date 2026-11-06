@@ -5,6 +5,7 @@ from zipfile import ZipFile
 
 import pytest
 import sofar as sf
+from numpydoc.docscrape import FunctionDoc
 
 from irdl.base import BaseDataset
 from irdl.datasets.akt import AKTZipBaseDataset
@@ -39,6 +40,28 @@ class TestBaseDatasetAbstract:
 
 class TestBaseDatasetHelpers:
     """Tests for shared BaseDataset helper behavior."""
+
+    def test_get_docstring_normalizes_indented_dataset_parameters(self):
+        """Python 3.11/3.12 retain indentation in the Dataset-specific docstring."""
+
+        class IndentedDocDataset(BaseDataset):
+            name = "indented"
+            doi = "10.0000/indented"
+
+            @classmethod
+            def get(cls, scenario="A1"):
+                """Return the selected Scenario."""
+                return scenario
+
+            get.__func__.__doc__ = (
+                "\n        scenario : str, optional\n"
+                "            Scenario to retrieve. Default is 'A1'.\n"
+                "\n        Returns\n        -------\n        str\n            Selected Scenario.\n"
+            )
+
+        parameters = {param.name: param for param in FunctionDoc(IndentedDocDataset.get)["Parameters"]}
+        assert parameters["scenario"].desc == ["Scenario to retrieve. Default is 'A1'."]
+        assert "output_format" in parameters
 
     def test_output_path_accepts_source_filename_string(self, tmp_path):
         """Verify file-based output paths work when _source_filename returns a string."""
