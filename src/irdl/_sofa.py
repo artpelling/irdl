@@ -13,19 +13,17 @@ import numpy as np
 from irdl import config
 
 
-def choose_ir_chunk_shape(
-    shape: tuple[int, ...], dtype: np.dtype, *, max_bytes: int | None = None
-) -> tuple[int, int, int, int]:
-    """Choose byte-bounded FIR-E chunks for measurement- or receiver-heavy arrays.
+def choose_ir_chunk_shape(shape: tuple[int, ...], dtype: np.dtype, *, max_bytes: int | None = None) -> tuple[int, ...]:
+    """Choose byte-bounded FIR or FIR-E chunks for measurement- or receiver-heavy arrays.
 
-    Chunks contain one measurement and one emitter. Multiple measurements retain
+    Chunks contain one measurement and, for FIR-E, one emitter. Multiple measurements retain
     the draft's receiver grouping; a single measurement prioritizes adjacent samples.
     Both receivers and samples can be divided to keep oversized measurements bounded.
     Storage chunks are capped at 1 MiB and the shared batch budget. ``max_bytes``
     may impose a tighter bound when a check combines multiple input tiles.
     """
-    if len(shape) != 4 or any(not isinstance(size, (int, np.integer)) or size <= 0 for size in shape):  # noqa: PLR2004
-        msg = "IR shape must contain four positive integer dimensions"
+    if len(shape) not in (3, 4) or any(not isinstance(size, (int, np.integer)) or size <= 0 for size in shape):
+        msg = "IR shape must contain three or four positive integer dimensions"
         raise ValueError(msg)
     dtype = np.dtype(dtype)
     if dtype.kind != "f" or dtype.itemsize != np.dtype("f8").itemsize:
@@ -43,7 +41,7 @@ def choose_ir_chunk_shape(
     else:
         samples = min(shape[2], max_bytes // itemsize)
         receivers = min(shape[1], max_bytes // (samples * itemsize))
-    return 1, receivers, samples, 1
+    return (1, receivers, samples, 1)[: len(shape)]
 
 
 def write_ir_chunks(
@@ -140,16 +138,19 @@ def _ir_variable(sofa: h5.File) -> h5.Dataset:
     creation = ir.id.get_create_plist()
     filters = tuple(creation.get_filter(index)[0] for index in range(creation.get_nfilters()))
     if (
-        ir.ndim != 4  # noqa: PLR2004 - FIR-E: M, R, N, E.
+        ir.ndim not in (3, 4)  # FIR: M, R, N; FIR-E adds E.
         or not all(ir.shape)
         or ir.dtype.kind != "f"
         or ir.dtype.itemsize != np.dtype(np.float64).itemsize
         or ir.chunks is None
         or ir.chunks[0] != 1
-        or ir.chunks[-1] != 1
+        or (ir.ndim == 4 and ir.chunks[-1] != 1)  # noqa: PLR2004 - FIR-E emitter chunks.
         or filters != (h5.h5z.FILTER_SHUFFLE, h5.h5z.FILTER_DEFLATE)
     ):
-        msg = "Data.IR requires nonempty float64 FIR-E storage, single-measurement/emitter chunks, shuffle then gzip"
+        msg = (
+            "Data.IR requires nonempty float64 FIR or FIR-E storage, "
+            "single-measurement/emitter chunks, shuffle then gzip"
+        )
         raise ValueError(msg)
     return ir
 
