@@ -12,7 +12,7 @@ from irdl.logging import logger
 
 
 class MrtdDataset(BaseDataset):
-    """Download the MRTD dataset from Zenodo."""
+    """Download the Multi-Room Transition Dataset (MRTD) from Zenodo."""
 
     name = "mrtd"
     doi = "10.5281/zenodo.13341566"
@@ -33,12 +33,12 @@ class MrtdDataset(BaseDataset):
         """
         environment : str, optional
             Acoustic environment. One of 'hallways-lecturehall', 'offices',
-            or 'workshops'. Default is 'offices'.
+            or 'workshops'.
         receiver : str, optional
             'kemar' selects the binaural KEMAR and 'zoom' selects the
-            four-channel Zoom H3-VR. Default is 'kemar'.
+            four-channel Zoom H3-VR.
         loudspeaker : int, optional
-            Stationary loudspeaker number from 1 through 4. Default is 1.
+            Stationary loudspeaker number from 1 through 4.
 
         Returns
         -------

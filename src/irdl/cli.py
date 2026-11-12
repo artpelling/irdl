@@ -2,7 +2,7 @@
 
 import pathlib
 import types
-from importlib.metadata import version
+from importlib.metadata import version as package_version
 from inspect import signature
 from pathlib import Path
 from typing import Annotated, Any, Union, get_args, get_origin
@@ -103,19 +103,13 @@ app.add_typer(cache_app, name="cache")
 app.add_typer(get_app, name="get")
 
 
-def _get_version() -> str:
-    """Get the irdl package version."""
-    return version("irdl")
-
-
 @app.callback(invoke_without_command=True)
 def main_callback(
     version: bool = typer.Option(False, "--version", help="Show version and exit."),
 ) -> None:
     """Handle version flag."""
     if version:
-        version_str = _get_version()
-        typer.echo(f"irdl {version_str}")
+        typer.echo(f"irdl {package_version('irdl')}")
         raise typer.Exit
 
 
@@ -189,17 +183,16 @@ def cache_prune_command(
     return freed
 
 
-def _get_dataset_description(dataset_class: type) -> str:
-    """Get the first line of a dataset class's docstring."""
-    docstring = dataset_class.__doc__ or ""
-    return docstring.strip().split("\n")[0] if docstring.strip() else ""
-
-
 def _display_dataset(dataset_class: type) -> None:
-    """Display a single dataset with its description and DOI."""
+    """Display a single dataset with its description, Provider, and DOI."""
     typer.echo(f"  {typer.style(dataset_class.name, fg=typer.colors.BRIGHT_CYAN)}")
-    description = _get_dataset_description(dataset_class)
-    if description:
+    docstring = dataset_class.__doc__ or ""
+    description = " ".join(docstring.strip().split("\n\n", 1)[0].split())
+    summary, separator, provider = description.rpartition(" from ")
+    if separator:
+        typer.echo(f"    {summary}.")
+        typer.echo(f"    Provider: {provider.removesuffix('.')}")
+    elif description:
         typer.echo(f"    {description}")
     typer.echo(f"    DOI: https://doi.org/{dataset_class.doi}")
 

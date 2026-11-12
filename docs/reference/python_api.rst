@@ -13,6 +13,7 @@ Dataset modules
    :toctree: ../_autosummary
 
    base
+   config
    datasets.aalto
    datasets.akt
    datasets.barilan
@@ -20,6 +21,7 @@ Dataset modules
    datasets.iks
    datasets.ista
    datasets.sonicom
+   datasets.uec
 
 Registry
 --------

@@ -2,6 +2,7 @@
 
 import sys as _sys
 
+from . import config as config
 from .base import _get_dataset_classes as _get_dataset_classes
 from .datasets.aalto import MrtdDataset as MrtdDataset
 from .datasets.akt import BrasRs8Dataset as BrasRs8Dataset
@@ -15,5 +16,6 @@ from .datasets.ista import SrirachaDataset as SrirachaDataset
 from .datasets.sonicom import AriDataset as AriDataset
 from .datasets.sonicom import CipicDataset as CipicDataset
 from .datasets.sonicom import SadieDataset as SadieDataset
+from .datasets.uec import Meshgrid3dDataset as Meshgrid3dDataset
 
-__all__ = [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]
+__all__ = ["config"] + [dataset_class.__name__ for dataset_class in _get_dataset_classes(_sys.modules[__name__])]

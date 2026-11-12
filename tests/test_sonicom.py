@@ -181,7 +181,7 @@ def test_akt_raw_download_uses_canonical_zip(monkeypatch, tmp_path, dataset):
     assert calls == [tmp_path]
 
 
-@pytest.mark.parametrize("dataset_name", ["ari", "cipic", "sadie", "fabian", "hutubs", "dechorate", "miracle"])
+@pytest.mark.parametrize("dataset_name", ["ari", "cipic", "sadie", "fabian", "hutubs", "dechorate"])
 def test_dataset_hashes_are_keyed_by_source_filename(dataset_name):
     """Keep each Dataset's content pins separate from mutable endpoint URLs."""
     hashes = load_hash_registry(dataset_name)

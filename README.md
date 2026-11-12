@@ -54,6 +54,17 @@ Does not contain sampling weights, 'receiver_coordinates': 2D Coordinates object
 Does not contain sampling weights}
 ```
 
+Streamed IR processing uses one package-wide batch budget (64 MiB by default):
+
+```python
+import irdl
+
+irdl.config.batch_bytes = 16 * 1024**2
+```
+
+For CLI use, set `IRDL_BATCH_MIB=16` before starting `irdl`. This controls streaming
+batches, not total process memory; NumPy/pyfar outputs still load all requested IRs.
+
 ## Usage (CLI)
 
 Once installed, the package provides a convenient command line script which can be invoked with `irdl`.
