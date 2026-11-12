@@ -136,11 +136,6 @@ class DSpaceRepository(DataRepository):
 
         return cls(doi, archive_url)
 
-    def _handle_pid(self) -> str | None:
-        """Return the DepositOnce handle path from the archive URL, if present."""
-        parts = self.archive_url.split("/handle/", maxsplit=1)
-        return parts[1] if len(parts) == 2 else None
-
     def _warn_on_version_mismatch(self, session: requests.Session) -> None:
         """Warn when the DepositOnce DSpace major version differs from the tested API family."""
         response = session.get(DSPACE_API_ROOT, timeout=DEFAULT_TIMEOUT)
@@ -158,9 +153,9 @@ class DSpaceRepository(DataRepository):
     def _resolve_item(self, session: requests.Session) -> dict:
         """Resolve DOI/handle to the current DSpace item record."""
         identifiers = [self.doi]
-        handle_pid = self._handle_pid()
-        if handle_pid is not None:
-            identifiers.append(handle_pid)
+        parts = self.archive_url.split("/handle/", maxsplit=1)
+        if len(parts) == 2:
+            identifiers.append(parts[1])
 
         last_error = None
         for identifier in dict.fromkeys(identifiers):

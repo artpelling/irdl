@@ -154,9 +154,9 @@ def test_single_file_get_does_not_promote_failed_sofa(tmp_path, monkeypatch, fai
         fail()
 
     dataset = LocalSrirachaDataset()
-    ista_ir_chunks = ista._ista_ir_chunks
+    ista_ir_chunks = dataset._ista_ir_chunks
     if failure == "source":
-        monkeypatch.setattr(ista, "_ista_ir_chunks", failed_source)
+        monkeypatch.setattr(dataset, "_ista_ir_chunks", failed_source)
     elif failure == "compression":
         monkeypatch.setattr(_sofa, "_encode_ir_chunk", fail)
     elif failure == "payload":

@@ -74,14 +74,14 @@ class Meshgrid3dDataset(BaseDataset):
         """Write a single loudspeaker and many microphone positions through the shared writer."""
         batch_bytes = config._get_batch_bytes()
         with h5.File(ingest_path, "r") as source:
-            info = _provider_info(source)
+            info = self._provider_info(source)
             receivers, samples = source["rir"].shape
             chunks = choose_ir_chunk_shape((1, receivers, samples, 1), np.dtype("f8"))
             sofa_path.parent.mkdir(parents=True, exist_ok=True)
             with netCDF4.Dataset(sofa_path, "w", format="NETCDF4") as sofa:
                 self._create_skeleton(sofa, source, info, chunks, batch_bytes)
             # NetCDF4 must close before the shared h5py writer opens the skeleton.
-            write_ir_chunks(sofa_path, _meshgrid_ir_chunks(source["rir"], chunks))
+            write_ir_chunks(sofa_path, self._meshgrid_ir_chunks(source["rir"], chunks))
         _preserve_permissions(ingest_path, sofa_path)
         self._verify_payload(sofa_path, ingest_path)
         return sofa_path
@@ -162,7 +162,7 @@ class Meshgrid3dDataset(BaseDataset):
         """Compare IRs and supplied geometry exactly in bounded receiver/sample tiles."""
         batch_bytes = config._get_batch_bytes()
         with h5.File(ingest_artifact, "r") as source, h5.File(sofa_path, "r") as sofa:
-            info = _provider_info(source)
+            info = self._provider_info(source)
             rir = source["rir"]
             ir = sofa["Data.IR"]
             if ir.shape != (1, *rir.shape, 1):
@@ -173,61 +173,61 @@ class Meshgrid3dDataset(BaseDataset):
                 rows = slice(start, min(start + chunks[1], rir.shape[0]))
                 for sample in range(0, rir.shape[1], chunks[2]):
                     samples = slice(sample, min(sample + chunks[2], rir.shape[1]))
-                    _compare("Data.IR", rir[rows, samples], ir[0, rows, samples, 0])
+                    self._compare("Data.IR", rir[rows, samples], ir[0, rows, samples, 0])
             batch_rows = max(1, batch_bytes // (3 * 8))
             for start in range(0, rir.shape[0], batch_rows):
                 rows = slice(start, min(start + batch_rows, rir.shape[0]))
-                _compare("ReceiverPosition", source["grid"][:, rows].T, sofa["ReceiverPosition"][rows, :, 0])
-                _compare("Data.Delay", np.zeros((1, rows.stop - rows.start, 1)), sofa["Data.Delay"][:, rows, :])
+                self._compare("ReceiverPosition", source["grid"][:, rows].T, sofa["ReceiverPosition"][rows, :, 0])
+                self._compare("Data.Delay", np.zeros((1, rows.stop - rows.start, 1)), sofa["Data.Delay"][:, rows, :])
             for name in ("ListenerView", "SourceView"):
-                _compare(name, [[1.0, 0.0, 0.0]], sofa[name][:])
+                self._compare(name, [[1.0, 0.0, 0.0]], sofa[name][:])
             for name in ("ListenerUp", "SourceUp"):
-                _compare(name, [[0.0, 0.0, 1.0]], sofa[name][:])
-            _compare("SourcePosition", info["sp_pos"][None], sofa["SourcePosition"][:])
-            _compare("EmitterPosition", np.zeros((1, 3, 1)), sofa["EmitterPosition"][:])
-            _compare("ListenerPosition", np.zeros((1, 3)), sofa["ListenerPosition"][:])
-            _compare("Data.SamplingRate", info["fs"], sofa["Data.SamplingRate"][:])
-            _compare("SpeedOfSound", info["c"].reshape(1, 1), sofa["SpeedOfSound"][:])
-            _compare("RoomCornerA", np.zeros((1, 3)), sofa["RoomCornerA"][:])
-            _compare("RoomCornerB", info["room_size"][None], sofa["RoomCornerB"][:])
-            _compare("RoomVolume", [np.prod(info["room_size"])], sofa["RoomVolume"][:])
+                self._compare(name, [[0.0, 0.0, 1.0]], sofa[name][:])
+            self._compare("SourcePosition", info["sp_pos"][None], sofa["SourcePosition"][:])
+            self._compare("EmitterPosition", np.zeros((1, 3, 1)), sofa["EmitterPosition"][:])
+            self._compare("ListenerPosition", np.zeros((1, 3)), sofa["ListenerPosition"][:])
+            self._compare("Data.SamplingRate", info["fs"], sofa["Data.SamplingRate"][:])
+            self._compare("SpeedOfSound", info["c"].reshape(1, 1), sofa["SpeedOfSound"][:])
+            self._compare("RoomCornerA", np.zeros((1, 3)), sofa["RoomCornerA"][:])
+            self._compare("RoomCornerB", info["room_size"][None], sofa["RoomCornerB"][:])
+            self._compare("RoomVolume", [np.prod(info["room_size"])], sofa["RoomVolume"][:])
 
-
-def _provider_info(source: h5.File) -> dict[str, np.ndarray]:
-    """Validate the MATLAB matrix layout and read the small numeric attributes."""
-    rir, grid = source["rir"], source["grid"]
-    if rir.ndim != 2 or not all(rir.shape) or grid.shape != (3, rir.shape[0]):  # noqa: PLR2004 - MATLAB matrices.
-        msg = f"Expected MATLAB-layout /rir and /grid datasets, got {rir.shape} and {grid.shape}"
-        raise ValueError(msg)
-    if rir.dtype.kind != "f" or not np.can_cast(rir.dtype, np.dtype("f8"), casting="safe"):
-        msg = "Meshgrid /rir must contain real floating-point values representable as float64"
-        raise ValueError(msg)
-    info = {}
-    for name, size in {"sp_pos": 3, "room_size": 3, "fs": 1, "c": 1}.items():
-        values = np.asarray(source.attrs[name], dtype="f8").reshape(-1)
-        if values.size != size or not np.isfinite(values).all():
-            msg = f"Invalid Meshgrid attribute {name}: expected {size} finite values"
+    @staticmethod
+    def _provider_info(source: h5.File) -> dict[str, np.ndarray]:
+        """Validate the MATLAB matrix layout and read the small numeric attributes."""
+        rir, grid = source["rir"], source["grid"]
+        if rir.ndim != 2 or not all(rir.shape) or grid.shape != (3, rir.shape[0]):  # noqa: PLR2004 - MATLAB matrices.
+            msg = f"Expected MATLAB-layout /rir and /grid datasets, got {rir.shape} and {grid.shape}"
             raise ValueError(msg)
-        info[name] = values
-    if any(np.any(info[name] <= 0) for name in ("room_size", "fs", "c")):
-        msg = "Meshgrid room_size, fs, and c must be positive"
-        raise ValueError(msg)
-    return info
+        if rir.dtype.kind != "f" or not np.can_cast(rir.dtype, np.dtype("f8"), casting="safe"):
+            msg = "Meshgrid /rir must contain real floating-point values representable as float64"
+            raise ValueError(msg)
+        info = {}
+        for name, size in {"sp_pos": 3, "room_size": 3, "fs": 1, "c": 1}.items():
+            values = np.asarray(source.attrs[name], dtype="f8").reshape(-1)
+            if values.size != size or not np.isfinite(values).all():
+                msg = f"Invalid Meshgrid attribute {name}: expected {size} finite values"
+                raise ValueError(msg)
+            info[name] = values
+        if any(np.any(info[name] <= 0) for name in ("room_size", "fs", "c")):
+            msg = "Meshgrid room_size, fs, and c must be positive"
+            raise ValueError(msg)
+        return info
 
+    @staticmethod
+    def _meshgrid_ir_chunks(rir: h5.Dataset, chunks: tuple[int, int, int, int]):
+        """Map requested microphone/sample blocks to complete stored SOFA IR chunks."""
+        for receiver in range(0, rir.shape[0], chunks[1]):
+            rows = slice(receiver, min(receiver + chunks[1], rir.shape[0]))
+            for sample in range(0, rir.shape[1], chunks[2]):
+                samples = slice(sample, min(sample + chunks[2], rir.shape[1]))
+                yield (0, receiver, sample, 0), rir[rows, samples][np.newaxis, ..., np.newaxis]
 
-def _meshgrid_ir_chunks(rir: h5.Dataset, chunks: tuple[int, int, int, int]):
-    """Map requested microphone/sample blocks to complete stored SOFA IR chunks."""
-    for receiver in range(0, rir.shape[0], chunks[1]):
-        rows = slice(receiver, min(receiver + chunks[1], rir.shape[0]))
-        for sample in range(0, rir.shape[1], chunks[2]):
-            samples = slice(sample, min(sample + chunks[2], rir.shape[1]))
-            yield (0, receiver, sample, 0), rir[rows, samples][np.newaxis, ..., np.newaxis]
-
-
-def _compare(name: str, expected: np.ndarray, actual: np.ndarray) -> None:
-    """Reject shape changes and any difference in the stored float64 values."""
-    expected = np.asarray(expected, dtype="f8")
-    actual = np.asarray(actual, dtype="f8")
-    if expected.shape != actual.shape or expected.tobytes() != actual.tobytes():
-        msg = f"Meshgrid payload mismatch: {name}"
-        raise ValueError(msg)
+    @staticmethod
+    def _compare(name: str, expected: np.ndarray, actual: np.ndarray) -> None:
+        """Reject shape changes and any difference in the stored float64 values."""
+        expected = np.asarray(expected, dtype="f8")
+        actual = np.asarray(actual, dtype="f8")
+        if expected.shape != actual.shape or expected.tobytes() != actual.tobytes():
+            msg = f"Meshgrid payload mismatch: {name}"
+            raise ValueError(msg)

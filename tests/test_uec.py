@@ -110,6 +110,8 @@ def test_meshgrid_uses_shared_writer_with_its_own_geometry_and_metadata(tmp_path
     path = tmp_path / "meshgrid.sofa"
     writes = []
     original_write = uec.write_ir_chunks
+    assert original_write is _sofa.write_ir_chunks
+    assert uec.choose_ir_chunk_shape is _sofa.choose_ir_chunk_shape
 
     def observed_write(sofa_path, chunks):
         writes.append(sofa_path)
@@ -406,14 +408,14 @@ def test_meshgrid_get_discards_failed_output(tmp_path, monkeypatch, failure):
         msg = "injected failure"
         raise OSError(msg)
 
-    chunks = uec._meshgrid_ir_chunks
+    chunks = Meshgrid3dDataset._meshgrid_ir_chunks
 
     def failed_source(*args):
         yield next(chunks(*args))
         fail()
 
     if failure == "source":
-        monkeypatch.setattr(uec, "_meshgrid_ir_chunks", failed_source)
+        monkeypatch.setattr(Meshgrid3dDataset, "_meshgrid_ir_chunks", staticmethod(failed_source))
     elif failure == "compression":
         monkeypatch.setattr(_sofa, "_encode_ir_chunk", fail)
     elif failure == "write":

@@ -102,7 +102,8 @@ def test_full_plane_bounds_source_reads_for_writing_and_verification(tmp_path, m
     reads = []
     caller = get_ident()
     getitem = h5.Dataset.__getitem__
-    check_values = ista._check_sriracha_values
+    dataset = SrirachaDataset()
+    check_values = dataset._check_sriracha_values
 
     def bounded_check(sofa_path, name, expected_values, actual, dtype):
         if name == "Data.IR":
@@ -119,9 +120,8 @@ def test_full_plane_bounds_source_reads_for_writing_and_verification(tmp_path, m
         return values
 
     monkeypatch.setattr(config, "batch_bytes", budget)
-    monkeypatch.setattr(ista, "_check_sriracha_values", bounded_check)
+    monkeypatch.setattr(dataset, "_check_sriracha_values", bounded_check)
     monkeypatch.setattr(h5.Dataset, "__getitem__", bounded_read)
-    dataset = SrirachaDataset()
     dataset._ingest(provider_dir, path, scenario="SR1", dataset_split=None)
 
     assert reads
@@ -266,7 +266,7 @@ def test_full_plane_get_discards_failures_and_closes_source_handles(tmp_path, mo
     dataset = _local_dataset(provider_dir)
     opened = []
     open_file = h5.File
-    source_chunks = ista._sriracha_ir_chunks
+    source_chunks = dataset._sriracha_ir_chunks
 
     def tracked_file(*args, **kwargs):
         handle = open_file(*args, **kwargs)
@@ -282,7 +282,7 @@ def test_full_plane_get_discards_failures_and_closes_source_handles(tmp_path, mo
         fail()
 
     if failure == "source":
-        monkeypatch.setattr(ista, "_sriracha_ir_chunks", failed_source)
+        monkeypatch.setattr(dataset, "_sriracha_ir_chunks", failed_source)
     elif failure == "compression":
         monkeypatch.setattr(_sofa, "_encode_ir_chunk", fail)
     elif failure == "write":
