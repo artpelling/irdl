@@ -12,16 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - One package-wide streaming batch budget: `irdl.config.batch_bytes` (64 MiB by default), initialized from `IRDL_BATCH_MIB` for CLI use
 - `Meshgrid3dDataset` (`irdl get 3dmeshgrid`) for the 3D Meshgrid room impulse response dataset, using the shared streamed SOFA writer
+- `MpRirDataset` (`irdl get mprir`) for MP-RIR measurements on a 3D spatial grid, using the shared streamed SOFA writer and AES69-compliant float64 FIR storage
 
 ### Changed
 - Update SRIRACHA to DOI `10.14279/depositonce-26873`, using native SOFA artifacts for all non-raw selections and the new release's HDF5 sources for raw retrieval; full-plane raw requests remain unsupported
 - Replace separate Dataset row limits and byte budgets with the shared setting for streamed IR reads, payload checks, queued compression buffers, and HDF5 export; storage chunk shapes remain automatic
 - Use literal dimension counts with targeted Ruff exceptions instead of duplicated `DIMS` constants
-- Share bounded IR compression and writing across MIRACLE, SRIRACHA, and 3D Meshgrid while keeping Dataset-specific metadata and reformatting separate
+- Share bounded IR compression and writing across MIRACLE, SRIRACHA, 3D Meshgrid, and MP-RIR while keeping Dataset-specific metadata and reformatting separate
 - Bound SOFA-to-HDF5 IR reads by stored chunks and byte size, including single-measurement datasets with many receivers
 - Moved Dataset implementation modules into the `irdl.datasets` subpackage (e.g. `irdl.sonicom` -> `irdl.datasets.sonicom`); top-level imports such as `irdl.CipicDataset` are unchanged
-### Added
-- `MpRirDataset` for the MP-RIR room impulse responses measured on a 3D spatial grid
 
 ---
 

@@ -2,4 +2,6 @@ MP-RIR contains 68,736 room impulse responses measured in a non-rectangular, fur
 
 Each call retrieves one loudspeaker, which is a separate 3.4 GB download, as a ``SingleRoomSRIR`` SOFA file with 1074 measurements and eight receivers. ``ReceiverPosition`` holds the provider's absolute microphone coordinates for each measurement, and ``ListenerPosition`` is the origin. All coordinates are given in the room coordinate system with its origin at room corner C0. ``SourcePosition`` is the centre of the loudspeaker base.
 
+IRDL writes the IRs through the shared streamed SOFA writer using double precision, as required by AES69-2022. Float32 Provider values are widened losslessly to float64. IR storage chunks and queued compression buffers follow ``irdl.config.batch_bytes``.
+
 By default, IRDL removes the guard time and the measurement system delay given in the provider's ``Setup.npz`` so that sample zero corresponds to sound emission; set ``remove_delay=False`` to keep the full responses and record the delay in ``Data.Delay``.

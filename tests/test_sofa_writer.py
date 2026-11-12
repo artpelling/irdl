@@ -18,8 +18,9 @@ _SAMPLING_RATE = 48000
 
 def _skeleton(path, shape, chunks, *, dtype="f8", endian="native", **kwargs):
     """Create a small NetCDF4 skeleton with metadata the writer must leave alone."""
+    dimensions = ("M", "R", "N", "E")[: len(shape)]
     with netCDF4.Dataset(path, "w", format="NETCDF4") as sofa:
-        for name, size in zip(("M", "R", "N", "E"), shape, strict=True):
+        for name, size in zip(dimensions, shape, strict=True):
             sofa.createDimension(name, size)
         sofa.createDimension("I", 1)
         sofa.Conventions = "SOFA"
@@ -30,7 +31,7 @@ def _skeleton(path, shape, chunks, *, dtype="f8", endian="native", **kwargs):
         sofa.createVariable(
             "Data.IR",
             dtype,
-            ("M", "R", "N", "E"),
+            dimensions,
             chunksizes=chunks,
             endian=endian,
             fill_value=-12345.0,
@@ -47,16 +48,16 @@ def _chunks(data, chunk_shape):
         yield offset, data[selection]
 
 
-def test_writer_preserves_ir_values_and_existing_metadata(tmp_path):
-    """Write IR values exactly without recreating the skeleton or its metadata."""
-    shape = (2, 3, 7, 1)
-    chunks = (1, 2, 4, 1)
+@pytest.mark.parametrize("workers", [1, 3])
+@pytest.mark.parametrize(("shape", "chunks"), [((2, 3, 7), (1, 2, 4)), ((2, 3, 7, 1), (1, 2, 4, 1))])
+def test_writer_preserves_ir_values_and_existing_metadata(tmp_path, workers, shape, chunks):
+    """Write FIR and FIR-E values exactly without changing the skeleton's metadata."""
     expected = np.arange(np.prod(shape), dtype=np.float64).reshape(shape)
     expected.flat[1] = np.nextafter(1.0, 2.0)
     path = tmp_path / "streamed.sofa"
     _skeleton(path, shape, chunks)
 
-    write_ir_chunks(path, _chunks(expected, chunks))
+    write_ir_chunks(path, _chunks(expected, chunks), workers=workers)
 
     with h5.File(path) as sofa:
         np.testing.assert_array_equal(sofa["Data.IR"][:], expected)
@@ -74,7 +75,9 @@ def test_writer_preserves_ir_values_and_existing_metadata(tmp_path):
         {"name": "not-ir"},
         {"dtype": "f4"},
         {"dtype": "i8"},
-        {"shape": (2, 3, 7), "chunks": (1, 2, 4)},
+        {"shape": (2, 7), "chunks": (1, 4)},
+        {"shape": (2, 3, 7, 1, 1), "chunks": (1, 2, 4, 1, 1)},
+        {"shape": (2, 3, 7), "chunks": (2, 2, 4)},
         {"shape": (0, 3, 7, 1), "maxshape": (None, 3, 7, 1)},
         {"chunks": (2, 2, 4, 1)},
         {"shape": (2, 3, 7, 2), "chunks": (1, 2, 4, 2)},
@@ -221,23 +224,29 @@ def test_writer_preserves_storage_bytes_and_edge_padding(tmp_path, workers, dtyp
         assert decoded.tobytes() == padded.tobytes()
 
 
-@pytest.mark.parametrize("shape", [(144, 8, 16384, 1), (1, 8592, 48000, 1), (1, 2, 200000, 1), (2, 1, 1, 1)])
+@pytest.mark.parametrize(
+    "shape",
+    [(144, 8, 16384), (1, 8592, 48000), (144, 8, 16384, 1), (1, 8592, 48000, 1), (1, 2, 200000, 1), (2, 1, 1, 1)],
+)
 def test_chunk_shape_bounds_bytes_even_for_large_measurements(shape):
     """A single measurement may need receiver or sample chunks, not a whole row."""
     chunks = choose_ir_chunk_shape(shape, np.dtype("f8"))
 
-    assert chunks[0] == chunks[-1] == 1
+    assert chunks[0] == 1
+    if len(shape) == 4:  # noqa: PLR2004 - FIR-E has an emitter axis.
+        assert chunks[-1] == 1
     assert all(0 < step <= size for step, size in zip(chunks, shape, strict=True))
     assert np.prod(chunks) * 8 <= 1024**2
     if shape[0] == 1 and shape[1] > 1:
         assert chunks[1] < shape[1]
 
 
+@pytest.mark.parametrize("shape", [(1, 3072, 4096), (1, 3072, 4096, 1)])
 @pytest.mark.parametrize("budget", [8, 64, 2 * 1024**2])
-def test_storage_chunks_follow_the_global_budget_without_becoming_huge(monkeypatch, budget):
+def test_storage_chunks_follow_the_global_budget_without_becoming_huge(monkeypatch, budget, shape):
     """One package setting caps storage chunks; larger budgets retain the automatic 1 MiB cap."""
     monkeypatch.setattr(config, "batch_bytes", budget)
-    chunks = choose_ir_chunk_shape((1, 3072, 4096, 1), np.dtype("f8"))
+    chunks = choose_ir_chunk_shape(shape, np.dtype("f8"))
     assert np.prod(chunks) * 8 <= min(budget, 1024**2)
 
 
@@ -248,7 +257,7 @@ def test_measurement_chunks_keep_receivers_together_like_the_optimized_draft():
     assert choose_ir_chunk_shape(shape, np.dtype("f8")) == expected_chunks
 
 
-@pytest.mark.parametrize("shape", [(0, 2, 3, 1), (1, 0, 3, 1), (1, 2, 0, 1), (1, 2, 3), (1, -2, 3, 1)])
+@pytest.mark.parametrize("shape", [(0, 2, 3, 1), (1, 0, 3, 1), (1, 2, 0, 1), (1, 2), (1, 2, 3, 1, 1), (1, -2, 3, 1)])
 def test_chunk_shape_rejects_empty_or_invalid_dimensions(shape):
     """Invalid shapes are rejected before creating a partially defined SOFA file."""
     with pytest.raises(ValueError, match="shape"):

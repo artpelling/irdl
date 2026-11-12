@@ -53,6 +53,7 @@ def test_list_displays_consistent_dataset_descriptions():
         "miracle": "Microphone Array Impulse Response Dataset for Acoustic Learning (MIRACLE)",
         # User-confirmed expansion.
         "mird": "Multi-Channel Impulse Response Database (MIRD)",
+        "mprir": "Multi-Purpose Room Impulse Response Dataset (MP-RIR)",
         # Paper title checked; full text unavailable: https://doi.org/10.1109/IWAENC61483.2024.10694356
         "mrtd": "Multi-Room Transition Dataset (MRTD)",
         # Original paper: https://doi.org/10.1186/s13636-023-00284-9

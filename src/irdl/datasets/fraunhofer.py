@@ -12,13 +12,14 @@ from pathlib import Path
 import netCDF4
 import numpy as np
 
+from irdl._sofa import choose_ir_chunk_shape, write_ir_chunks
 from irdl.base import BaseDataset, DatasetCategory
 from irdl.downloader import _fetch, _pooch_from_doi
 from irdl.logging import logger
 
 
 class MpRirDataset(BaseDataset):
-    """Download MP-RIR measurements of one loudspeaker on the full 3D microphone grid."""
+    """Download the Multi-Purpose Room Impulse Response Dataset (MP-RIR) from Zenodo."""
 
     name = "mprir"
     doi = "10.5281/zenodo.11148712"
@@ -35,12 +36,12 @@ class MpRirDataset(BaseDataset):
         remove_delay: bool = True,
     ) -> dict | Path | None:
         """
-        source : str
+        source : str, optional
             Loudspeaker to retrieve, one of 'S1' to 'S8'. S1 to S4 are subwoofers,
             S5 to S8 are full-range loudspeakers.
-        remove_delay : bool
+        remove_delay : bool, optional
             Remove the guard time and the measurement system delay so that sample
-            zero corresponds to sound emission. Default is True.
+            zero corresponds to sound emission.
         """  # noqa: D205, D403
         return cls()._get(
             source=source,
@@ -122,6 +123,7 @@ class MpRirDataset(BaseDataset):
         m, r, _ = rirs.shape
         start = delay if remove_delay else 0
         n = rirs.shape[2] - start
+        ir_chunks = choose_ir_chunk_shape((m, r, n), np.dtype("f8"))
         if remove_delay:
             logger.info(f"Removing guard time and system delay ({delay} samples) ...")
             delay_comment = f"The guard time and the measurement system delay ({delay} samples in total) were removed."
@@ -201,12 +203,22 @@ class MpRirDataset(BaseDataset):
             room_volume_var.Units = "cubic metre"
             room_volume_var[:] = room_volume
 
-            data_ir = sofa.createVariable(
-                "Data.IR", "f4", ("M", "R", "N"), zlib=True, complevel=4, chunksizes=(1, r, n)
-            )
-            for row in range(0, m, self._chunk_size):
-                rows = slice(row, min(row + self._chunk_size, m))
-                data_ir[rows] = rirs[rows, :, start:]
+            # AES69-2022 requires double storage even for float32 Provider IRs.
+            sofa.createVariable("Data.IR", "f8", ("M", "R", "N"), zlib=True, complevel=4, chunksizes=ir_chunks)
 
+        # NetCDF4 must close before the shared h5py writer opens the skeleton.
+        write_ir_chunks(sofa_path, self._mprir_ir_chunks(rirs[:, :, start:], ir_chunks))
         logger.info(f"Finished SOFA file {sofa_path}.")
         return sofa_path
+
+    @staticmethod
+    def _mprir_ir_chunks(rirs: np.ndarray, chunk_shape: tuple[int, ...]):
+        """Yield bounded FIR views of the memory-mapped IRs in stored order."""
+        m, r, n = rirs.shape
+        for row in range(m):
+            for receiver in range(0, r, chunk_shape[1]):
+                for sample in range(0, n, chunk_shape[2]):
+                    yield (
+                        (row, receiver, sample),
+                        rirs[row : row + 1, receiver : receiver + chunk_shape[1], sample : sample + chunk_shape[2]],
+                    )

@@ -1,9 +1,11 @@
 """Tests for the Fraunhofer IIS MP-RIR dataset."""
 
+import h5py as h5
 import numpy as np
 import pytest
 import sofar as sf
 
+from irdl import _sofa, config
 from irdl.datasets import fraunhofer
 from irdl.datasets.fraunhofer import MpRirDataset
 
@@ -102,3 +104,81 @@ def test_mprir_ingest_reconstructs_grid_and_delay(provider_dir, tmp_path, remove
     np.testing.assert_allclose(sofa.ReceiverPosition.transpose(2, 0, 1), mxyz)
     np.testing.assert_allclose(sofa.SourcePosition, np.tile([5.0, 7.0, 0.725], (5, 1)))
     np.testing.assert_allclose(sofa.SourceView, [[np.cos(np.deg2rad(450)), np.sin(np.deg2rad(450)), 0.0]], atol=1e-12)
+
+
+@pytest.mark.parametrize("budget", [8, 80, 1024])
+@pytest.mark.parametrize("dtype", ["f4", "f8"])
+@pytest.mark.parametrize("remove_delay", [True, False])
+def test_mprir_uses_shared_writer_with_bounded_float64_chunks(
+    provider_dir, tmp_path, monkeypatch, budget, dtype, remove_delay
+):
+    """FIR chunks obey the byte budget and losslessly widen Provider values to double."""
+    rirs = np.load(provider_dir / "S5_Mrir.npy").astype(dtype)
+    rirs.flat[-1] = np.nextafter(np.array(1, dtype=dtype), np.array(2, dtype=dtype))
+    np.save(provider_dir / "S5_Mrir.npy", rirs)
+    monkeypatch.setattr(config, "batch_bytes", budget)
+    original_write = fraunhofer.write_ir_chunks
+    assert original_write is _sofa.write_ir_chunks
+    assert fraunhofer.choose_ir_chunk_shape is _sofa.choose_ir_chunk_shape
+    offsets = []
+
+    def observed_write(path, chunks):
+        def checked_chunks():
+            for offset, values in chunks:
+                assert values.ndim == 3  # noqa: PLR2004 - FIR: M, R, N.
+                assert isinstance(values, np.memmap)
+                assert values.size * np.dtype("f8").itemsize <= budget
+                offsets.append(offset)
+                yield offset, values
+
+        return original_write(path, checked_chunks())
+
+    monkeypatch.setattr(fraunhofer, "write_ir_chunks", observed_write)
+    selectors = SELECTORS | {"remove_delay": remove_delay}
+    path = MpRirDataset()._ingest(provider_dir, tmp_path / "bounded.sofa", **selectors)
+    start = T_GUARD + T_SYSTEM if remove_delay else 0
+    with h5.File(path) as sofa:
+        ir = sofa["Data.IR"]
+        assert ir.dtype == np.dtype("f8")
+        assert ir.shape == rirs[:, :, start:].shape
+        assert np.prod(ir.chunks) * ir.dtype.itemsize <= budget
+        assert offsets == [tuple(axis.start for axis in selection) for selection in ir.iter_chunks()]
+        np.testing.assert_array_equal(ir[:], rirs[:, :, start:].astype("f8"))
+
+
+@pytest.mark.parametrize("remove_delay", [True, False])
+def test_mprir_get_retains_sofa_and_exports_float64_hdf5(provider_dir, tmp_path, monkeypatch, remove_delay):
+    """Get validates and retains the FIR artifact before deriving a float64 HDF5 output."""
+    monkeypatch.setattr(MpRirDataset, "_download", lambda *_args, **_kwargs: provider_dir)
+    path = MpRirDataset.get(source="S5", cache_dir=tmp_path / "cache", output_format="hdf5", remove_delay=remove_delay)
+    start = T_GUARD + T_SYSTEM if remove_delay else 0
+    expected = np.load(provider_dir / "S5_Mrir.npy")[:, :, start:]
+    sofa_path = path.with_suffix(".sofa")
+    assert sofa_path.exists()
+    with h5.File(sofa_path) as sofa, h5.File(path) as exported:
+        assert sofa["Data.IR"].dtype == exported["data/impulse_response"].dtype == np.dtype("f8")
+        np.testing.assert_array_equal(exported["data/impulse_response"][:], expected)
+        np.testing.assert_array_equal(sofa["Data.Delay"][:], np.full((1, 8), T_GUARD + T_SYSTEM - start))
+
+
+@pytest.mark.parametrize("failure", ["source", "compression", "write", "convention"])
+def test_mprir_get_discards_failed_output(provider_dir, tmp_path, monkeypatch, failure):
+    """Failures in the shared writer or convention validation never promote partial artifacts."""
+    monkeypatch.setattr(MpRirDataset, "_download", lambda *_args, **_kwargs: provider_dir)
+
+    def fail(*_args, **_kwargs):
+        msg = "injected failure"
+        raise OSError(msg)
+
+    if failure == "source":
+        monkeypatch.setattr(MpRirDataset, "_mprir_ir_chunks", fail)
+    elif failure == "compression":
+        monkeypatch.setattr(_sofa, "_encode_ir_chunk", fail)
+    elif failure == "write":
+        monkeypatch.setattr(fraunhofer, "write_ir_chunks", fail)
+    else:
+        monkeypatch.setattr(MpRirDataset, "_verify_sofa_convention", fail)
+
+    with pytest.raises(OSError, match="injected failure"):
+        MpRirDataset.get(source="S5", cache_dir=tmp_path / "cache", output_format="sofa")
+    assert list((tmp_path / "cache" / "MPRIR" / "output").iterdir()) == []
